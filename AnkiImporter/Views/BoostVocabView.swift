@@ -361,12 +361,13 @@ struct BoostVocabView: View {
     private func sendToAnki() {
         Task { @MainActor in
             isSendingToAnki = true
-            submitMessage = nil
+            submitMessage = "Checking Anki…"
             submitError = false
             defer { isSendingToAnki = false }
 
             let pairs = wordPairs
             do {
+                submitMessage = "Opening Anki…"
                 for pair in pairs {
                     _ = try await AnkiConnectClient.addNote(
                         word: pair.word,

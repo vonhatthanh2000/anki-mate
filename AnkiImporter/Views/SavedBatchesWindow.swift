@@ -7,6 +7,8 @@ struct SavedBatchesWindow: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var dateFilter: DateFilter = .all
+    @State private var sendingBatchID: Int64?
+    @State private var sendStatusMessage: String?
 
     private var displayBatches: [SavedBatch] {
         batches
@@ -176,6 +178,33 @@ struct SavedBatchesWindow: View {
                             .foregroundColor(AppTheme.text.opacity(0.7))
                     }
                     Spacer()
+
+                    VStack(alignment: .trailing, spacing: 8) {
+                        if let sendingBatchID, sendingBatchID == batch.id {
+                            Text("Sending…")
+                                .font(AppTheme.inputFont(size: 13))
+                                .foregroundColor(AppTheme.secondary)
+                        } else if let sendStatusMessage, sendingBatchID == nil {
+                            Text(sendStatusMessage)
+                                .font(AppTheme.inputFont(size: 13))
+                                .foregroundColor(AppTheme.primary)
+                        }
+
+                        Button(action: { sendBatchToAnki(batch) }) {
+                            Text(sendingBatchID == batch.id ? "Sending…" : "Send to Anki")
+                                .font(AppTheme.displayFont(size: 14))
+                                .foregroundColor(AppTheme.background)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(batch.words.isEmpty ? AppTheme.text.opacity(0.3) : AppTheme.card)
+                                .overlay(
+                                    Rectangle()
+                                        .stroke(AppTheme.primary, lineWidth: 3)
+                                )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .disabled(batch.words.isEmpty || sendingBatchID != nil)
+                    }
                 }
                 .padding(24)
                 .background(AppTheme.card)
@@ -323,6 +352,32 @@ struct SavedBatchesWindow: View {
                 errorMessage = error.localizedDescription
             }
             isLoading = false
+        }
+    }
+
+    private func sendBatchToAnki(_ batch: SavedBatch) {
+        Task { @MainActor in
+            sendingBatchID = batch.id
+            sendStatusMessage = "Checking Anki…"
+            defer {
+                sendingBatchID = nil
+            }
+
+            do {
+                sendStatusMessage = "Opening Anki…"
+                for word in batch.words {
+                    _ = try await AnkiConnectClient.addNote(
+                        word: word.word,
+                        meaning: word.meaning,
+                        wordType: word.wordType,
+                        example1: word.example1,
+                        example2: word.example2
+                    )
+                }
+                sendStatusMessage = "Sent \(batch.words.count) note(s)"
+            } catch {
+                sendStatusMessage = "Failed: \(error.localizedDescription)"
+            }
         }
     }
 }
