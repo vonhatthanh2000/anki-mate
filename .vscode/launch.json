@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:anki-mate}/app",
+      "name": "Debug AnkiImporter (app)",
+      "target": "AnkiImporter",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug AnkiImporter (app)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:anki-mate}/app",
+      "name": "Release AnkiImporter (app)",
+      "target": "AnkiImporter",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release AnkiImporter (app)"
+    }
+  ]
+}
