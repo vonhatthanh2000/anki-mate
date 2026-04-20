@@ -1,24 +1,24 @@
 {
-  "configurations": [
-    {
-      "type": "swift",
-      "request": "launch",
-      "args": [],
-      "cwd": "${workspaceFolder:anki-mate}/app",
-      "name": "Debug AnkiImporter (app)",
-      "target": "AnkiImporter",
-      "configuration": "debug",
-      "preLaunchTask": "swift: Build Debug AnkiImporter (app)"
-    },
-    {
-      "type": "swift",
-      "request": "launch",
-      "args": [],
-      "cwd": "${workspaceFolder:anki-mate}/app",
-      "name": "Release AnkiImporter (app)",
-      "target": "AnkiImporter",
-      "configuration": "release",
-      "preLaunchTask": "swift: Build Release AnkiImporter (app)"
-    }
-  ]
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:anki-mate}",
+            "name": "Debug AnkiImporter",
+            "target": "AnkiImporter",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AnkiImporter"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:anki-mate}",
+            "name": "Release AnkiImporter",
+            "target": "AnkiImporter",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AnkiImporter"
+        }
+    ]
 }

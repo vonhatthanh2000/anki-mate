@@ -5,6 +5,14 @@ import AppKit
 struct AnkiImporterApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
+    init() {
+        do {
+            try BatchStore.shared.initialize()
+        } catch {
+            assertionFailure("Database initialization failed: \(error.localizedDescription)")
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

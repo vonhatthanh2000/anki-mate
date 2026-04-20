@@ -6,6 +6,10 @@ struct BoostVocabView: View {
     @State private var currentWord: String = ""
     @State private var currentMeaning: String = ""
     @State private var paragraph: String = ""
+    @State private var submitMessage: String?
+    @State private var submitError = false
+    @State private var isSubmitting = false
+    @State private var isSendingToAnki = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -112,19 +116,59 @@ struct BoostVocabView: View {
                             .allowsHitTesting(false)
                     )
 
-                    Button(action: addWordPair) {
-                        Text("+ Add Word")
-                            .font(AppTheme.displayFont(size: 16))
-                            .foregroundColor(AppTheme.background)
-                            .frame(maxWidth: .infinity)
-                            .padding(16)
-                            .background(AppTheme.primary)
-                            .overlay(
-                                Rectangle()
-                                    .stroke(AppTheme.primary, lineWidth: 4)
-                            )
+                    HStack(spacing: 16) {
+                        Button(action: addWordPair) {
+                            Text("+ Add Word")
+                                .font(AppTheme.displayFont(size: 16))
+                                .foregroundColor(AppTheme.background)
+                                .frame(maxWidth: .infinity)
+                                .padding(16)
+                                .background(AppTheme.primary)
+                                .overlay(
+                                    Rectangle()
+                                        .stroke(AppTheme.primary, lineWidth: 4)
+                                )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .disabled(isSubmitting || isSendingToAnki)
+
+                        Button(action: submitBatch) {
+                            Text(isSubmitting ? "Submitting..." : "Submit")
+                                .font(AppTheme.displayFont(size: 16))
+                                .foregroundColor(AppTheme.background)
+                                .frame(maxWidth: .infinity)
+                                .padding(16)
+                                .background(AppTheme.secondary)
+                                .overlay(
+                                    Rectangle()
+                                        .stroke(AppTheme.primary, lineWidth: 4)
+                                )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .disabled(isSubmitting || isSendingToAnki || wordPairs.isEmpty)
+
+                        Button(action: sendToAnki) {
+                            Text(isSendingToAnki ? "Anki…" : "Send to Anki")
+                                .font(AppTheme.displayFont(size: 16))
+                                .foregroundColor(AppTheme.background)
+                                .frame(maxWidth: .infinity)
+                                .padding(16)
+                                .background(AppTheme.card)
+                                .overlay(
+                                    Rectangle()
+                                        .stroke(AppTheme.primary, lineWidth: 4)
+                                )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .disabled(isSubmitting || isSendingToAnki || wordPairs.isEmpty)
                     }
-                    .buttonStyle(PlainButtonStyle())
+
+                    if let submitMessage {
+                        Text(submitMessage)
+                            .font(AppTheme.inputFont(size: 14))
+                            .foregroundColor(submitError ? AppTheme.destructive : AppTheme.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
 
                     if !wordPairs.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
@@ -265,6 +309,61 @@ struct BoostVocabView: View {
 
     private func removeWordPair(_ id: UUID) {
         wordPairs.removeAll { $0.id == id }
+    }
+
+    private func submitBatch() {
+        isSubmitting = true
+        submitMessage = nil
+        submitError = false
+        defer { isSubmitting = false }
+
+        do {
+            let words = wordPairs.map {
+                BatchWordInput(
+                    word: $0.word,
+                    meaning: $0.meaning,
+                    wordType: "",
+                    example1: "",
+                    example2: ""
+                )
+            }
+            let batchID = try BatchStore.shared.saveBatch(
+                words: words,
+                paragraph: paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+            submitMessage = "Saved batch #\(batchID)"
+            wordPairs = []
+            paragraph = ""
+        } catch {
+            submitError = true
+            submitMessage = error.localizedDescription
+        }
+    }
+
+    private func sendToAnki() {
+        Task { @MainActor in
+            isSendingToAnki = true
+            submitMessage = nil
+            submitError = false
+            defer { isSendingToAnki = false }
+
+            let pairs = wordPairs
+            do {
+                for pair in pairs {
+                    _ = try await AnkiConnectClient.addNote(
+                        word: pair.word,
+                        meaning: pair.meaning,
+                        wordType: "",
+                        example1: "",
+                        example2: ""
+                    )
+                }
+                submitMessage = "Sent \(pairs.count) note(s) to Anki."
+            } catch {
+                submitError = true
+                submitMessage = error.localizedDescription
+            }
+        }
     }
 }
 

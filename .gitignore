@@ -1,5 +1,7 @@
-server/.venv
-server/data
+.venv
 
-app/.build
-app/build
+.build
+build
+
+*.app
+Contents/*
