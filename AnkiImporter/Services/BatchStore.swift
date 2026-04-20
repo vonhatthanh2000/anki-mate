@@ -36,6 +36,12 @@ final class BatchStore {
         }
     }
 
+    func loadSavedBatches(dateFilter: DateFilter = .all) throws -> [SavedBatch] {
+        try sqlite.withConnection { db in
+            try BatchRead.fetchAllBatches(on: db, dateFilter: dateFilter)
+        }
+    }
+
     /// `anki_mate.db` next to the running executable (e.g. `.build/.../debug/` or `MyApp.app/Contents/MacOS/`).
     private static func databaseURL() -> URL {
         if let dir = Bundle.main.executableURL?.deletingLastPathComponent() {

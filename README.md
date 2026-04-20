@@ -41,15 +41,17 @@ If `Bundle.main.executableURL` is unavailable (unusual), the app falls back to `
 ```
 AnkiImporter/
 ├── AnkiImporterApp.swift       # Entry point; initializes database
-├── Persistence/                # SQLite only (connection, schema, batch SQL)
+├── Persistence/                # SQLite only (connection, schema, read/write SQL)
 │   ├── DatabaseError.swift
 │   ├── SQLiteDatabase.swift
 │   ├── Schema.swift
-│   └── BatchSQL.swift
+│   ├── BatchSQL.swift         # INSERT with transactions
+│   └── BatchRead.swift        # SELECT with JOINs
 ├── Services/
 │   ├── BatchStore.swift        # App-facing save API; delegates to Persistence
 │   └── AnkiConnectClient.swift
 ├── Models/
+│   ├── SavedBatch.swift
 │   ├── BatchWordInput.swift
 │   ├── AppTheme.swift
 │   ├── WordPair.swift
@@ -57,6 +59,8 @@ AnkiImporter/
 ├── Views/
 │   ├── ContentView.swift
 │   ├── HomeView.swift
+│   ├── SavedBatchesWindow.swift  # Modal showing all saved batches
+│   ├── HighlightedParagraph.swift # Reusable word highlighter
 │   └── BoostVocabView.swift
 └── Info.plist
 ```

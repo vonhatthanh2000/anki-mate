@@ -54,6 +54,23 @@ struct SQLiteDatabase {
         }
     }
 
+    /// `true` if a row is available; `false` if there are no more rows.
+    static func stepRow(_ statement: OpaquePointer?, db: OpaquePointer) throws -> Bool {
+        let rc = sqlite3_step(statement)
+        if rc == SQLITE_ROW { return true }
+        if rc == SQLITE_DONE { return false }
+        throw sqliteError(db)
+    }
+
+    static func columnInt64(_ statement: OpaquePointer?, _ index: Int32) -> Int64 {
+        sqlite3_column_int64(statement, index)
+    }
+
+    static func columnText(_ statement: OpaquePointer?, _ index: Int32) -> String {
+        guard let c = sqlite3_column_text(statement, index) else { return "" }
+        return String(cString: c)
+    }
+
     static func sqliteError(_ db: OpaquePointer) -> DatabaseError {
         let message = String(cString: sqlite3_errmsg(db))
         return .sqlite(message)

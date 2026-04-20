@@ -10,6 +10,7 @@ struct BoostVocabView: View {
     @State private var submitError = false
     @State private var isSubmitting = false
     @State private var isSendingToAnki = false
+    @State private var showSavedBatches = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,6 +36,19 @@ struct BoostVocabView: View {
                     .foregroundColor(AppTheme.text)
 
                 Spacer()
+
+                Button(action: { showSavedBatches = true }) {
+                    Image(systemName: "archivebox.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(AppTheme.background)
+                        .frame(width: 48, height: 48)
+                        .background(AppTheme.card)
+                        .overlay(
+                            Rectangle()
+                                .stroke(AppTheme.primary, lineWidth: 4)
+                        )
+                }
+                .buttonStyle(PlainButtonStyle())
             }
             .padding(24)
             .frame(maxWidth: .infinity)
@@ -45,7 +59,7 @@ struct BoostVocabView: View {
                 alignment: .bottom
             )
 
-            HStack(alignment: .top, spacing: 32) {
+            HStack(alignment: .top, spacing: 24) {
                 VStack(spacing: 24) {
                     HStack(spacing: 16) {
                         VStack(alignment: .leading, spacing: 12) {
@@ -286,12 +300,16 @@ struct BoostVocabView: View {
                         .stroke(AppTheme.primary, lineWidth: 4)
                         .allowsHitTesting(false)
                 )
+
             }
             .padding(32)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AppTheme.background.ignoresSafeArea())
+        .sheet(isPresented: $showSavedBatches) {
+            SavedBatchesWindow()
+        }
     }
 
     private func addWordPair() {
@@ -365,6 +383,7 @@ struct BoostVocabView: View {
             }
         }
     }
+
 }
 
 struct HighlightedText: View {
