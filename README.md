@@ -1,55 +1,78 @@
-# AnkiImporter (macOS)
+# Vocab to Anki (macOS)
 
-SwiftUI macOS app: **BoostVocab** — vocabulary lists, paragraph preview with highlights, **Submit** to save a batch into local SQLite, and **Send to Anki** via AnkiConnect (`AnkiConnectClient.swift`).
+![App Logo](AnkiImport-logo.png)
+
+**Vocab to Anki** — A native macOS app for creating vocabulary entries and importing them directly to Anki with AI-generated examples.
+
+## Features
+
+- ✨ **AI-Powered**: Uses OpenAI to generate word types and example sentences
+- 📝 **Batch Management**: Save multiple words with paragraphs
+- 🔍 **Smart Preview**: Highlight vocabulary words in context
+- 📤 **Direct Anki Import**: Send cards directly to Anki with one click
+- 🗄️ **Local SQLite**: All data stored locally
 
 ## Requirements
 
 - macOS 13.0 or later
-- Swift 6.0 or later (SwiftPM or Xcode)
+- Anki desktop app with [AnkiConnect](https://foosoft.net/projects/anki-connect/) add-on
+- OpenAI API key (for AI generation)
 
-## Run
+## Quick Start
 
-From the repository root (where `Package.swift` is):
+### Option 1: Build & Run App Bundle
+
+```bash
+./package_macos_app.sh
+open "build/AnkiImporter.app"
+```
+
+### Option 2: Run from Source
 
 ```bash
 swift run AnkiImporter
 ```
 
-Or build and open the debug binary:
-
-```bash
-swift build
-open "$(swift build --show-bin-path)/AnkiImporter"
-```
-
-Release `.app` bundle:
+### Option 3: Install to Applications
 
 ```bash
 ./package_macos_app.sh
+cp -R "build/AnkiImporter.app" /Applications/
 ```
 
-Open in Xcode: `open Package.swift`
+## Setup
 
-## Database file
+1. **Configure OpenAI API Key**: Add your key to `agent/.env`:
+   ```
+   OPENAI_API_KEY=sk-your-key-here
+   ```
 
-SQLite is stored as **`anki_mate.db` in the same folder as the `AnkiImporter` executable** — for example next to `.build/arm64-apple-macosx/debug/AnkiImporter`, or inside `AnkiImporter.app/Contents/MacOS/` when you use `package_macos_app.sh`. That keeps the database easy to find next to the app you ran.
+2. **Install Anki & AnkiConnect**:
+   - Download [Anki](https://apps.ankiweb.net/)
+   - Install [AnkiConnect](https://foosoft.net/projects/anki-connect/) add-on (code: `2055492159`)
 
-If `Bundle.main.executableURL` is unavailable (unusual), the app falls back to `~/Library/Application Support/AnkiImporter/anki_mate.db`.
+3. **Create Vocab Deck**: In Anki, create a deck named "Vocab" with note type containing fields:
+   - Word
+   - Meaning
+   - Word type
+   - Example 1
+   - Example 2
 
-## Project structure
+## Project Structure
 
 ```
 AnkiImporter/
-├── AnkiImporterApp.swift       # Entry point; initializes database
-├── Persistence/                # SQLite only (connection, schema, read/write SQL)
+├── AnkiImporterApp.swift          # App entry point
+├── Persistence/                   # SQLite layer
 │   ├── DatabaseError.swift
 │   ├── SQLiteDatabase.swift
 │   ├── Schema.swift
-│   ├── BatchSQL.swift         # INSERT with transactions
-│   └── BatchRead.swift        # SELECT with JOINs
-├── Services/
-│   ├── BatchStore.swift        # App-facing save API; delegates to Persistence
-│   └── AnkiConnectClient.swift
+│   ├── BatchSQL.swift
+│   └── BatchRead.swift
+├── Services/                      # Business logic
+│   ├── BatchStore.swift
+│   ├── AnkiConnectClient.swift   # AnkiConnect integration
+│   └── VocabAgentClient.swift      # OpenAI agent integration
 ├── Models/
 │   ├── SavedBatch.swift
 │   ├── BatchWordInput.swift
@@ -59,11 +82,24 @@ AnkiImporter/
 ├── Views/
 │   ├── ContentView.swift
 │   ├── HomeView.swift
-│   ├── SavedBatchesWindow.swift  # Modal showing all saved batches
-│   ├── HighlightedParagraph.swift # Reusable word highlighter
+│   ├── SavedBatchesWindow.swift
+│   ├── HighlightedParagraph.swift
 │   └── BoostVocabView.swift
 └── Info.plist
+
+agent/                             # Python AI agent (bundled)
+├── anki_vocab_suggest.py
+├── vocab_cli.py                    # CLI wrapper for Swift
+├── requirements.txt
+├── .venv/                          # Python dependencies
+└── .env                            # API key (not in repo)
 ```
+
+## Database Location
+
+SQLite is stored as **`anki_mate.db`** next to the app executable:
+- Dev builds: `.build/arm64-apple-macosx/debug/anki_mate.db`
+- Packaged app: `AnkiImporter.app/Contents/MacOS/anki_mate.db`
 
 ## License
 

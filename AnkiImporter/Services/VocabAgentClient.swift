@@ -85,20 +85,30 @@ enum VocabAgentClient {
     }
 
     private static func findScriptPath() -> String? {
-        // Get the directory of the current executable
+        // First: Try inside app bundle Resources (for packaged app)
+        if let resourcesURL = Bundle.main.resourceURL {
+            let bundledScript = resourcesURL.appendingPathComponent("agent/vocab_cli.py").path
+            if FileManager.default.fileExists(atPath: bundledScript) {
+                print("Using bundled agent: \(bundledScript)")
+                return bundledScript
+            }
+        }
+
+        // Second: Try next to executable (for dev builds)
         if let executableURL = Bundle.main.executableURL {
             let executableDir = executableURL.deletingLastPathComponent()
 
-            // Try next to the executable
             let scriptPath = executableDir.appendingPathComponent("agent/vocab_cli.py").path
             if FileManager.default.fileExists(atPath: scriptPath) {
+                print("Using dev agent: \(scriptPath)")
                 return scriptPath
             }
 
-            // Try one level up (for .app bundle)
+            // Try one level up
             let parentDir = executableDir.deletingLastPathComponent()
             let scriptPath2 = parentDir.appendingPathComponent("agent/vocab_cli.py").path
             if FileManager.default.fileExists(atPath: scriptPath2) {
+                print("Using dev agent: \(scriptPath2)")
                 return scriptPath2
             }
         }
@@ -113,10 +123,12 @@ enum VocabAgentClient {
         for path in possiblePaths {
             let expandedPath = NSString(string: path).expandingTildeInPath
             if FileManager.default.fileExists(atPath: expandedPath) {
+                print("Using fallback agent: \(expandedPath)")
                 return expandedPath
             }
         }
 
+        print("Could not find vocab_cli.py")
         return nil
     }
 
@@ -128,6 +140,15 @@ enum VocabAgentClient {
         if FileManager.default.fileExists(atPath: venvPython) {
             print("Using venv Python: \(venvPython)")
             return venvPython
+        }
+
+        // Try bundled venv in Resources (for packaged app)
+        if let resourcesURL = Bundle.main.resourceURL {
+            let bundledVenv = resourcesURL.appendingPathComponent("agent/.venv/bin/python3").path
+            if FileManager.default.fileExists(atPath: bundledVenv) {
+                print("Using bundled venv Python: \(bundledVenv)")
+                return bundledVenv
+            }
         }
 
         // Fallback to system Python

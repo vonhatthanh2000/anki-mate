@@ -52,6 +52,7 @@ struct SavedBatchesWindow: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 280)
+                .tint(AppTheme.primary)
 
                 Spacer()
 
@@ -128,20 +129,22 @@ struct SavedBatchesWindow: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Batch #\(batch.id)")
                                     .font(AppTheme.displayFont(size: 16))
-                                    .foregroundColor(AppTheme.text)
+                                    .foregroundColor(selectedBatch?.id == batch.id ? AppTheme.background : AppTheme.text)
                                 Text(batch.createdAt)
                                     .font(AppTheme.inputFont(size: 12))
-                                    .foregroundColor(AppTheme.text.opacity(0.7))
+                                    .foregroundColor(selectedBatch?.id == batch.id ? AppTheme.background.opacity(0.8) : AppTheme.text.opacity(0.7))
                                 Text("\(batch.words.count) words")
                                     .font(AppTheme.inputFont(size: 12))
-                                    .foregroundColor(AppTheme.text.opacity(0.6))
+                                    .foregroundColor(selectedBatch?.id == batch.id ? AppTheme.background.opacity(0.7) : AppTheme.text.opacity(0.6))
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(AppTheme.primary)
+                                .foregroundColor(selectedBatch?.id == batch.id ? AppTheme.background : AppTheme.primary)
                         }
                         .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(selectedBatch?.id == batch.id ? AppTheme.primary : Color.clear)
                         .tag(batch)
                     }
                     .frame(width: 260)
