@@ -3,7 +3,9 @@ import SQLite3
 
 enum BatchSQL {
     /// Inserts one `batch`, related `word` rows, and one `paragraph` inside a single transaction.
-    static func saveBatch(on db: OpaquePointer, words: [BatchWordInput], paragraph: String) throws -> Int64 {
+    static func saveBatch(on db: OpaquePointer, words: [BatchWordInput], paragraph: String) throws
+        -> Int64
+    {
         try SQLiteDatabase.exec(db, sql: "BEGIN IMMEDIATE TRANSACTION;")
         var committed = false
         defer {
@@ -27,11 +29,13 @@ enum BatchSQL {
         return sqlite3_last_insert_rowid(db)
     }
 
-    private static func insertWords(_ db: OpaquePointer, batchID: Int64, words: [BatchWordInput]) throws {
+    private static func insertWords(_ db: OpaquePointer, batchID: Int64, words: [BatchWordInput])
+        throws
+    {
         let sql = """
-        INSERT INTO word (batch_id, word, word_type, meaning, example_1, example_2)
-        VALUES (?, ?, ?, ?, ?, ?);
-        """
+            INSERT INTO word (batch_id, word, word_type, meaning, example_1, example_2)
+            VALUES (?, ?, ?, ?, ?, ?);
+            """
         let statement = try SQLiteDatabase.prepare(db, sql: sql)
         defer { sqlite3_finalize(statement) }
 
@@ -51,7 +55,9 @@ enum BatchSQL {
         }
     }
 
-    private static func insertParagraph(_ db: OpaquePointer, batchID: Int64, paragraph: String) throws {
+    private static func insertParagraph(_ db: OpaquePointer, batchID: Int64, paragraph: String)
+        throws
+    {
         let statement = try SQLiteDatabase.prepare(
             db,
             sql: "INSERT INTO paragraph (batch_id, paragraph) VALUES (?, ?);"

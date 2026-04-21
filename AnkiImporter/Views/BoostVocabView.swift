@@ -361,23 +361,53 @@ struct BoostVocabView: View {
     private func sendToAnki() {
         Task { @MainActor in
             isSendingToAnki = true
-            submitMessage = "Checking Anki…"
+            submitMessage = "Starting…"
             submitError = false
             defer { isSendingToAnki = false }
 
             let pairs = wordPairs
             do {
+                // Open Anki first
                 submitMessage = "Opening Anki…"
-                for pair in pairs {
-                    _ = try await AnkiConnectClient.addNote(
-                        word: pair.word,
-                        meaning: pair.meaning,
-                        wordType: "",
-                        example1: "",
-                        example2: ""
-                    )
+                AnkiConnectClient.openAnki()
+
+                var successCount = 0
+                var failedWords: [String] = []
+
+                for (index, pair) in pairs.enumerated() {
+                    submitMessage = "Processing \(index + 1)/\(pairs.count): \(pair.word)…"
+
+                    do {
+                        // Call Python agent to enrich the word data
+                        let enriched = try await VocabAgentClient.enrichWord(
+                            word: pair.word,
+                            meaning: pair.meaning
+                        )
+
+                        // Send enriched data to Anki
+                        _ = try await AnkiConnectClient.addNote(
+                            word: enriched.word,
+                            meaning: enriched.meaning,
+                            wordType: enriched.wordType,
+                            example1: enriched.example1,
+                            example2: enriched.example2
+                        )
+
+                        successCount += 1
+                    } catch {
+                        failedWords.append(pair.word)
+                        print("Failed to process '\(pair.word)': \(error.localizedDescription)")
+                        // Continue with next word
+                    }
                 }
-                submitMessage = "Sent \(pairs.count) note(s) to Anki."
+
+                if failedWords.isEmpty {
+                    submitMessage = "Sent \(successCount) note(s) to Anki ✓"
+                } else {
+                    submitMessage = "Sent \(successCount), failed: \(failedWords.joined(separator: ", "))"
+                    submitError = true
+                }
+
             } catch {
                 submitError = true
                 submitMessage = error.localizedDescription

@@ -358,23 +358,52 @@ struct SavedBatchesWindow: View {
     private func sendBatchToAnki(_ batch: SavedBatch) {
         Task { @MainActor in
             sendingBatchID = batch.id
-            sendStatusMessage = "Checking Anki…"
+            sendStatusMessage = "Starting…"
             defer {
                 sendingBatchID = nil
             }
 
             do {
+                // Open Anki first
                 sendStatusMessage = "Opening Anki…"
-                for word in batch.words {
-                    _ = try await AnkiConnectClient.addNote(
-                        word: word.word,
-                        meaning: word.meaning,
-                        wordType: word.wordType,
-                        example1: word.example1,
-                        example2: word.example2
-                    )
+                AnkiConnectClient.openAnki()
+
+                var successCount = 0
+                var failedWords: [String] = []
+
+                for (index, word) in batch.words.enumerated() {
+                    sendStatusMessage = "Processing \(index + 1)/\(batch.words.count): \(word.word)…"
+
+                    do {
+                        // Call Python agent to enrich the word data
+                        let enriched = try await VocabAgentClient.enrichWord(
+                            word: word.word,
+                            meaning: word.meaning
+                        )
+
+                        // Send enriched data to Anki
+                        _ = try await AnkiConnectClient.addNote(
+                            word: enriched.word,
+                            meaning: enriched.meaning,
+                            wordType: enriched.wordType,
+                            example1: enriched.example1,
+                            example2: enriched.example2
+                        )
+
+                        successCount += 1
+                    } catch {
+                        failedWords.append(word.word)
+                        print("Failed to process '\(word.word)': \(error.localizedDescription)")
+                        // Continue with next word
+                    }
                 }
-                sendStatusMessage = "Sent \(batch.words.count) note(s)"
+
+                if failedWords.isEmpty {
+                    sendStatusMessage = "Sent \(successCount) note(s) ✓"
+                } else {
+                    sendStatusMessage = "Sent \(successCount), failed: \(failedWords.joined(separator: ", "))"
+                }
+
             } catch {
                 sendStatusMessage = "Failed: \(error.localizedDescription)"
             }

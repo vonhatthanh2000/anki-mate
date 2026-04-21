@@ -33,8 +33,9 @@ struct HighlightedParagraph: View {
                 if let start = AttributedString.Index(range.lowerBound, within: attributedString),
                    let end = AttributedString.Index(range.upperBound, within: attributedString) {
                     let attrRange = start..<end
-                    attributedString[attrRange].backgroundColor = AppTheme.secondary
-                    attributedString[attrRange].foregroundColor = AppTheme.text
+                    // Bold the matched words instead of background color
+                    attributedString[attrRange].inlinePresentationIntent = .stronglyEmphasized
+                    attributedString[attrRange].foregroundColor = AppTheme.primary
                 }
             }
         }
