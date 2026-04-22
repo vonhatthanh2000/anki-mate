@@ -16,10 +16,7 @@ let package = Package(
         .executableTarget(
             name: "AnkiImporter",
             path: "AnkiImporter",
-            exclude: ["Info.plist"],
-            linkerSettings: [
-                .linkedLibrary("sqlite3")
-            ]
+            exclude: ["Info.plist"]
         )
     ]
 )

@@ -330,31 +330,34 @@ struct BoostVocabView: View {
     }
 
     private func submitBatch() {
-        isSubmitting = true
-        submitMessage = nil
-        submitError = false
-        defer { isSubmitting = false }
+        Task { @MainActor in
+            isSubmitting = true
+            submitMessage = nil
+            submitError = false
 
-        do {
-            let words = wordPairs.map {
-                BatchWordInput(
-                    word: $0.word,
-                    meaning: $0.meaning,
-                    wordType: "",
-                    example1: "",
-                    example2: ""
+            do {
+                let words = wordPairs.map {
+                    BatchWordInput(
+                        word: $0.word,
+                        meaning: $0.meaning,
+                        wordType: "",
+                        example1: "",
+                        example2: ""
+                    )
+                }
+                let batchID = try await SupabaseStore.shared.saveBatch(
+                    words: words,
+                    paragraph: paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
                 )
+                submitMessage = "Saved batch #\(batchID)"
+                wordPairs = []
+                paragraph = ""
+            } catch {
+                submitError = true
+                submitMessage = error.localizedDescription
             }
-            let batchID = try BatchStore.shared.saveBatch(
-                words: words,
-                paragraph: paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
-            )
-            submitMessage = "Saved batch #\(batchID)"
-            wordPairs = []
-            paragraph = ""
-        } catch {
-            submitError = true
-            submitMessage = error.localizedDescription
+
+            isSubmitting = false
         }
     }
 

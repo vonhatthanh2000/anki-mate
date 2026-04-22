@@ -34,7 +34,13 @@ fi
 # Copy Python agent files (preserve .env and .venv)
 cp -R agent/* "$AGENT_DIR/"
 
-# Copy .env file explicitly if exists
+# Copy root .env file for Supabase credentials
+if [ -f ".env" ]; then
+    cp ".env" "$RESOURCES_DIR/"
+    echo "Root .env (Supabase credentials) added to bundle"
+fi
+
+# Copy agent .env file if exists
 if [ -f "agent/.env" ]; then
     cp "agent/.env" "$AGENT_DIR/"
 fi

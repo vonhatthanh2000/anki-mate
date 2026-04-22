@@ -6,10 +6,12 @@ struct AnkiImporterApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     init() {
-        do {
-            try BatchStore.shared.initialize()
-        } catch {
-            assertionFailure("Database initialization failed: \(error.localizedDescription)")
+        Task {
+            do {
+                try await SupabaseStore.shared.initialize()
+            } catch {
+                print("Supabase initialization failed: \(error.localizedDescription)")
+            }
         }
     }
 

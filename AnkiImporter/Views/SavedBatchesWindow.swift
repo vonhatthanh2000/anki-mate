@@ -347,7 +347,7 @@ struct SavedBatchesWindow: View {
 
         Task { @MainActor in
             do {
-                batches = try BatchStore.shared.loadSavedBatches(dateFilter: dateFilter)
+                batches = try await SupabaseStore.shared.loadSavedBatches(dateFilter: dateFilter)
                 if selectedBatch == nil || !batches.contains(where: { $0.id == selectedBatch?.id }) {
                     selectedBatch = batches.first
                 }
