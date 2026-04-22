@@ -162,7 +162,7 @@ struct SavedBatchesWindow: View {
                 }
             }
         }
-        .frame(minWidth: 900, minHeight: 600)
+        .frame(minWidth: 1100, minHeight: 760)
         .background(AppTheme.background.ignoresSafeArea())
         .onAppear(perform: reload)
     }
@@ -382,6 +382,20 @@ struct SavedBatchesWindow: View {
                         word: word.word,
                         meaning: word.meaning
                     )
+
+                    // Persist enriched fields back to the words table.
+                    do {
+                        try await SupabaseStore.shared.updateWordEnrichment(
+                            wordId: word.id,
+                            word: enriched.word,
+                            meaning: enriched.meaning,
+                            wordType: enriched.wordType,
+                            example1: enriched.example1,
+                            example2: enriched.example2
+                        )
+                    } catch {
+                        print("Failed to update DB for '\(word.word)': \(error.localizedDescription)")
+                    }
 
                     // Send enriched data to Anki
                     _ = try await AnkiConnectClient.addNote(

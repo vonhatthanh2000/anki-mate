@@ -155,8 +155,6 @@ enum AnkiConnectClient {
         example2: String,
         tags: [String] = []
     ) async throws -> Int? {
-        // Open Anki (fire and forget)
-        openAnki()
         let body = AddNotePayload(
             action: "addNote",
             version: apiVersion,

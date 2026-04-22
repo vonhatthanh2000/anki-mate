@@ -11,6 +11,7 @@ struct BoostVocabView: View {
     @State private var isSubmitting = false
     @State private var isSendingToAnki = false
     @State private var showSavedBatches = false
+    @State private var editingWordPairID: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -132,7 +133,7 @@ struct BoostVocabView: View {
 
                     HStack(spacing: 16) {
                         Button(action: addWordPair) {
-                            Text("+ Add Word")
+                            Text(editingWordPairID == nil ? "+ Add Word" : "Update Word")
                                 .font(AppTheme.displayFont(size: 16))
                                 .foregroundColor(AppTheme.background)
                                 .frame(maxWidth: .infinity)
@@ -206,6 +207,19 @@ struct BoostVocabView: View {
                                             }
                                             .frame(maxWidth: .infinity, alignment: .leading)
 
+                                            Button(action: { beginEditingWordPair(pair) }) {
+                                                Image(systemName: "pencil")
+                                                    .font(.system(size: 14, weight: .bold))
+                                                    .foregroundColor(AppTheme.background)
+                                                    .frame(width: 32, height: 32)
+                                                    .background(AppTheme.secondary)
+                                                    .overlay(
+                                                        Rectangle()
+                                                            .stroke(AppTheme.primary, lineWidth: 2)
+                                                    )
+                                            }
+                                            .buttonStyle(PlainButtonStyle())
+
                                             Button(action: { removeWordPair(pair.id) }) {
                                                 Text("×")
                                                     .font(.system(size: 20, weight: .bold))
@@ -229,8 +243,10 @@ struct BoostVocabView: View {
                                     }
                                 }
                             }
+                            .frame(maxHeight: .infinity, alignment: .top)
                         }
                         .padding(24)
+                        .frame(maxHeight: .infinity, alignment: .top)
                         .background(AppTheme.card)
                         .overlay(
                             Rectangle()
@@ -238,10 +254,8 @@ struct BoostVocabView: View {
                                 .allowsHitTesting(false)
                         )
                     }
-
-                    Spacer()
                 }
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 VStack(spacing: 12) {
                     Text("Write Your Paragraph")
@@ -255,7 +269,7 @@ struct BoostVocabView: View {
                         .tint(AppTheme.primary)
                         .scrollContentBackground(.hidden)
                         .padding(16)
-                        .frame(height: 128)
+                        .frame(height: 230)
                         .background(AppTheme.background)
                         .overlay(
                             Rectangle()
@@ -281,16 +295,16 @@ struct BoostVocabView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
-                        .frame(maxHeight: .infinity)
+                        .padding(16)
+                        .frame(height: 230)
+                        .background(AppTheme.background)
+                        .overlay(
+                            Rectangle()
+                                .stroke(AppTheme.primary, lineWidth: 4)
+                                .allowsHitTesting(false)
+                        )
                     }
-                    .padding(24)
-                    .frame(maxHeight: .infinity)
-                    .background(AppTheme.background)
-                    .overlay(
-                        Rectangle()
-                            .stroke(AppTheme.secondary, lineWidth: 4)
-                            .allowsHitTesting(false)
-                    )
+                    .frame(maxHeight: .infinity, alignment: .top)
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -313,20 +327,44 @@ struct BoostVocabView: View {
     }
 
     private func addWordPair() {
-        guard !currentWord.trimmingCharacters(in: .whitespaces).isEmpty,
-              !currentMeaning.trimmingCharacters(in: .whitespaces).isEmpty else {
+        let trimmedWord = currentWord.trimmingCharacters(in: .whitespaces)
+        let trimmedMeaning = currentMeaning.trimmingCharacters(in: .whitespaces)
+
+        guard !trimmedWord.isEmpty, !trimmedMeaning.isEmpty else {
             return
         }
 
-        let newPair = WordPair(word: currentWord.trimmingCharacters(in: .whitespaces),
-                               meaning: currentMeaning.trimmingCharacters(in: .whitespaces))
-        wordPairs.append(newPair)
+        if let editingWordPairID,
+            let index = wordPairs.firstIndex(where: { $0.id == editingWordPairID })
+        {
+            wordPairs[index].word = trimmedWord
+            wordPairs[index].meaning = trimmedMeaning
+            submitMessage = "Updated \(trimmedWord)"
+            submitError = false
+            self.editingWordPairID = nil
+        } else {
+            let newPair = WordPair(word: trimmedWord, meaning: trimmedMeaning)
+            wordPairs.append(newPair)
+        }
+
         currentWord = ""
         currentMeaning = ""
     }
 
     private func removeWordPair(_ id: UUID) {
         wordPairs.removeAll { $0.id == id }
+        if editingWordPairID == id {
+            editingWordPairID = nil
+            currentWord = ""
+            currentMeaning = ""
+        }
+    }
+
+    private func beginEditingWordPair(_ pair: WordPair) {
+        editingWordPairID = pair.id
+        currentWord = pair.word
+        currentMeaning = pair.meaning
+        submitMessage = nil
     }
 
     private func submitBatch() {
@@ -407,7 +445,8 @@ struct BoostVocabView: View {
             if failedWords.isEmpty {
                 submitMessage = "Sent \(successCount) note(s) to Anki ✓"
             } else {
-                submitMessage = "Sent \(successCount), failed: \(failedWords.joined(separator: ", "))"
+                submitMessage =
+                    "Sent \(successCount), failed: \(failedWords.joined(separator: ", "))"
                 submitError = true
             }
         }
@@ -437,7 +476,8 @@ struct HighlightedText: View {
         let words = wordPairs.map { $0.word.lowercased() }
         let pattern = "\\b(\(words.joined(separator: "|")))\\b"
 
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+        else {
             return attributedString
         }
 
@@ -447,9 +487,10 @@ struct HighlightedText: View {
         for match in matches.reversed() {
             if let range = Range(match.range, in: text) {
                 if let start = AttributedString.Index(range.lowerBound, within: attributedString),
-                   let end = AttributedString.Index(range.upperBound, within: attributedString) {
+                    let end = AttributedString.Index(range.upperBound, within: attributedString)
+                {
                     let attrRange = start..<end
-                    attributedString[attrRange].backgroundColor = AppTheme.secondary
+                    attributedString[attrRange].inlinePresentationIntent = .stronglyEmphasized
                     attributedString[attrRange].foregroundColor = AppTheme.text
                 }
             }
