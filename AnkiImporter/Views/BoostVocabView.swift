@@ -366,51 +366,46 @@ struct BoostVocabView: View {
             defer { isSendingToAnki = false }
 
             let pairs = wordPairs
-            do {
-                // Open Anki first
-                submitMessage = "Opening Anki…"
-                AnkiConnectClient.openAnki()
 
-                var successCount = 0
-                var failedWords: [String] = []
+            // Open Anki first
+            submitMessage = "Opening Anki…"
+            AnkiConnectClient.openAnki()
 
-                for (index, pair) in pairs.enumerated() {
-                    submitMessage = "Processing \(index + 1)/\(pairs.count): \(pair.word)…"
+            var successCount = 0
+            var failedWords: [String] = []
 
-                    do {
-                        // Call Python agent to enrich the word data
-                        let enriched = try await VocabAgentClient.enrichWord(
-                            word: pair.word,
-                            meaning: pair.meaning
-                        )
+            for (index, pair) in pairs.enumerated() {
+                submitMessage = "Processing \(index + 1)/\(pairs.count): \(pair.word)…"
 
-                        // Send enriched data to Anki
-                        _ = try await AnkiConnectClient.addNote(
-                            word: enriched.word,
-                            meaning: enriched.meaning,
-                            wordType: enriched.wordType,
-                            example1: enriched.example1,
-                            example2: enriched.example2
-                        )
+                do {
+                    // Call Python agent to enrich the word data
+                    let enriched = try await VocabAgentClient.enrichWord(
+                        word: pair.word,
+                        meaning: pair.meaning
+                    )
 
-                        successCount += 1
-                    } catch {
-                        failedWords.append(pair.word)
-                        print("Failed to process '\(pair.word)': \(error.localizedDescription)")
-                        // Continue with next word
-                    }
+                    // Send enriched data to Anki
+                    _ = try await AnkiConnectClient.addNote(
+                        word: enriched.word,
+                        meaning: enriched.meaning,
+                        wordType: enriched.wordType,
+                        example1: enriched.example1,
+                        example2: enriched.example2
+                    )
+
+                    successCount += 1
+                } catch {
+                    failedWords.append(pair.word)
+                    print("Failed to process '\(pair.word)': \(error.localizedDescription)")
+                    // Continue with next word
                 }
+            }
 
-                if failedWords.isEmpty {
-                    submitMessage = "Sent \(successCount) note(s) to Anki ✓"
-                } else {
-                    submitMessage = "Sent \(successCount), failed: \(failedWords.joined(separator: ", "))"
-                    submitError = true
-                }
-
-            } catch {
+            if failedWords.isEmpty {
+                submitMessage = "Sent \(successCount) note(s) to Anki ✓"
+            } else {
+                submitMessage = "Sent \(successCount), failed: \(failedWords.joined(separator: ", "))"
                 submitError = true
-                submitMessage = error.localizedDescription
             }
         }
     }

@@ -366,49 +366,44 @@ struct SavedBatchesWindow: View {
                 sendingBatchID = nil
             }
 
-            do {
-                // Open Anki first
-                sendStatusMessage = "Opening Anki…"
-                AnkiConnectClient.openAnki()
+            // Open Anki first
+            sendStatusMessage = "Opening Anki…"
+            AnkiConnectClient.openAnki()
 
-                var successCount = 0
-                var failedWords: [String] = []
+            var successCount = 0
+            var failedWords: [String] = []
 
-                for (index, word) in batch.words.enumerated() {
-                    sendStatusMessage = "Processing \(index + 1)/\(batch.words.count): \(word.word)…"
+            for (index, word) in batch.words.enumerated() {
+                sendStatusMessage = "Processing \(index + 1)/\(batch.words.count): \(word.word)…"
 
-                    do {
-                        // Call Python agent to enrich the word data
-                        let enriched = try await VocabAgentClient.enrichWord(
-                            word: word.word,
-                            meaning: word.meaning
-                        )
+                do {
+                    // Call Python agent to enrich the word data
+                    let enriched = try await VocabAgentClient.enrichWord(
+                        word: word.word,
+                        meaning: word.meaning
+                    )
 
-                        // Send enriched data to Anki
-                        _ = try await AnkiConnectClient.addNote(
-                            word: enriched.word,
-                            meaning: enriched.meaning,
-                            wordType: enriched.wordType,
-                            example1: enriched.example1,
-                            example2: enriched.example2
-                        )
+                    // Send enriched data to Anki
+                    _ = try await AnkiConnectClient.addNote(
+                        word: enriched.word,
+                        meaning: enriched.meaning,
+                        wordType: enriched.wordType,
+                        example1: enriched.example1,
+                        example2: enriched.example2
+                    )
 
-                        successCount += 1
-                    } catch {
-                        failedWords.append(word.word)
-                        print("Failed to process '\(word.word)': \(error.localizedDescription)")
-                        // Continue with next word
-                    }
+                    successCount += 1
+                } catch {
+                    failedWords.append(word.word)
+                    print("Failed to process '\(word.word)': \(error.localizedDescription)")
+                    // Continue with next word
                 }
+            }
 
-                if failedWords.isEmpty {
-                    sendStatusMessage = "Sent \(successCount) note(s) ✓"
-                } else {
-                    sendStatusMessage = "Sent \(successCount), failed: \(failedWords.joined(separator: ", "))"
-                }
-
-            } catch {
-                sendStatusMessage = "Failed: \(error.localizedDescription)"
+            if failedWords.isEmpty {
+                sendStatusMessage = "Sent \(successCount) note(s) ✓"
+            } else {
+                sendStatusMessage = "Sent \(successCount), failed: \(failedWords.joined(separator: ", "))"
             }
         }
     }
