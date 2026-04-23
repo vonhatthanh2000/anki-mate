@@ -98,6 +98,13 @@ final class SupabaseStore {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     }
 
+    private static func parseInt64(_ value: Any?) -> Int64? {
+        guard let value else { return nil }
+        if let n = value as? NSNumber { return n.int64Value }
+        if let i = value as? Int { return Int64(i) }
+        return nil
+    }
+
     private static func describeRestFailure(status: Int, body: Data) -> String {
         let snippet = String(data: body, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -133,10 +140,13 @@ final class SupabaseStore {
         }
     }
 
-    /// Save a batch with words and paragraph to Supabase
-    func saveBatch(words: [BatchWordInput], paragraph: String) async throws -> Int64 {
+    /// All words in the batch are saved with the same `topicId` (chosen in the UI).
+    func saveBatch(words: [BatchWordInput], paragraph: String, topicId: Int64) async throws -> Int64 {
         guard !words.isEmpty else {
             throw BatchStoreError.validation("Add at least one word before submitting.")
+        }
+        guard topicId > 0 else {
+            throw BatchStoreError.validation("Select a topic before submitting.")
         }
 
         // Insert batch using REST API directly
@@ -146,6 +156,7 @@ final class SupabaseStore {
         for word in words {
             try await insertWord(
                 batchId: batchId,
+                topicId: topicId,
                 word: word.word,
                 meaning: word.meaning,
                 wordType: word.wordType,
@@ -211,9 +222,110 @@ final class SupabaseStore {
         return id
     }
 
-    private func insertWord(batchId: Int64, word: String, meaning: String, wordType: String, example1: String, example2: String) async throws {
+    func fetchTopics() async throws -> [TopicRecord] {
+        var components = URLComponents(url: url.appendingPathComponent("/rest/v1/topics"), resolvingAgainstBaseURL: true)!
+        components.queryItems = [
+            URLQueryItem(name: "select", value: "id,name"),
+            URLQueryItem(name: "order", value: "name.asc")
+        ]
+        guard let topicURL = components.url else {
+            throw BatchStoreError.supabaseError("Invalid topic list URL")
+        }
+
+        var request = URLRequest(url: topicURL)
+        applySupabaseAuth(to: &request)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw BatchStoreError.supabaseError(
+                "Failed to load topics — \(Self.describeRestFailure(status: status, body: data))"
+            )
+        }
+
+        guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return []
+        }
+
+        return rows.compactMap { row in
+            guard let id = Self.parseInt64(row["id"]),
+                  let name = row["name"] as? String else {
+                return nil
+            }
+            return TopicRecord(id: id, name: name)
+        }
+    }
+
+    /// Inserts a topic row; on unique name conflict, returns the existing row’s id.
+    func insertTopic(name: String) async throws -> Int64 {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw BatchStoreError.validation("Topic name is empty.")
+        }
+
+        let body = try JSONSerialization.data(withJSONObject: ["name": trimmed])
+
+        var request = URLRequest(url: url.appendingPathComponent("/rest/v1/topics"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=representation", forHTTPHeaderField: "Prefer")
+        applySupabaseAuth(to: &request)
+        request.httpBody = body
+
+        let (respBody, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw BatchStoreError.supabaseError("No HTTP response when inserting topic")
+        }
+
+        if (200...299).contains(http.statusCode) {
+            guard let rows = try JSONSerialization.jsonObject(with: respBody) as? [[String: Any]],
+                  let first = rows.first,
+                  let id = Self.parseInt64(first["id"]) else {
+                throw BatchStoreError.supabaseError("Topic insert response missing id")
+            }
+            return id
+        }
+
+        if http.statusCode == 409 {
+            return try await topicIdForExactName(trimmed)
+        }
+
+        throw BatchStoreError.supabaseError(
+            "Failed to create topic — \(Self.describeRestFailure(status: http.statusCode, body: respBody))"
+        )
+    }
+
+    private func topicIdForExactName(_ name: String) async throws -> Int64 {
+        var components = URLComponents(url: url.appendingPathComponent("/rest/v1/topics"), resolvingAgainstBaseURL: true)!
+        components.queryItems = [
+            URLQueryItem(name: "select", value: "id"),
+            URLQueryItem(name: "name", value: "eq.\(name)"),
+            URLQueryItem(name: "limit", value: "1")
+        ]
+        guard let topicURL = components.url else {
+            throw BatchStoreError.supabaseError("Invalid topic lookup URL")
+        }
+
+        var request = URLRequest(url: topicURL)
+        applySupabaseAuth(to: &request)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+              let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              let first = rows.first,
+              let id = Self.parseInt64(first["id"]) else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw BatchStoreError.supabaseError(
+                "Could not resolve topic id after conflict — \(Self.describeRestFailure(status: status, body: data))"
+            )
+        }
+        return id
+    }
+
+    private func insertWord(batchId: Int64, topicId: Int64, word: String, meaning: String, wordType: String, example1: String, example2: String) async throws {
         let json: [String: Any] = [
             "batch_id": batchId,
+            "topic_id": topicId,
             "word": word,
             "meaning": meaning,
             "word_type": wordType,
@@ -317,7 +429,7 @@ final class SupabaseStore {
         let now = Date()
 
         var queryItems: [URLQueryItem] = []
-        queryItems.append(URLQueryItem(name: "select", value: "id,created_at,words(id,word,word_type,meaning,example_1,example_2),paragraphs(paragraph)"))
+        queryItems.append(URLQueryItem(name: "select", value: "id,created_at,words(id,word,word_type,meaning,example_1,example_2,topic_id,topics(name)),paragraphs(paragraph)"))
         queryItems.append(URLQueryItem(name: "order", value: "id.desc"))
 
         switch dateFilter {
@@ -375,13 +487,24 @@ final class SupabaseStore {
                           let meaning = wordData["meaning"] as? String else {
                         return nil
                     }
+                    guard let topicId = Self.parseInt64(wordData["topic_id"]) else {
+                        return nil
+                    }
+                    let topicName: String?
+                    if let embedded = wordData["topics"] as? [String: Any] {
+                        topicName = embedded["name"] as? String
+                    } else {
+                        topicName = nil
+                    }
                     return SavedBatchWord(
                         id: Int64(wordId),
                         word: word,
                         meaning: meaning,
                         wordType: wordData["word_type"] as? String ?? "",
                         example1: wordData["example_1"] as? String ?? "",
-                        example2: wordData["example_2"] as? String ?? ""
+                        example2: wordData["example_2"] as? String ?? "",
+                        topicId: topicId,
+                        topicName: topicName
                     )
                 }
             }

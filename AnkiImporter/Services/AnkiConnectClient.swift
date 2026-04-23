@@ -144,7 +144,50 @@ enum AnkiConnectClient {
         }
     }
 
-    /// Adds one note. Returns Anki’s note id when present.
+    /// Creates a deck if it doesn't exist. Returns the deck ID.
+    static func createDeck(_ name: String) async throws -> Int? {
+        let payload: [String: Any] = [
+            "action": "createDeck",
+            "version": apiVersion,
+            "params": ["deck": name]
+        ]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
+            return nil
+        }
+
+        var request = URLRequest(url: connectURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw AnkiConnectError.invalidResponse
+        }
+        guard (200 ... 299).contains(http.statusCode) else {
+            throw AnkiConnectError.httpStatus(http.statusCode)
+        }
+
+        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        if let err = obj["error"] as? String, !err.isEmpty {
+            // Deck might already exist, which is fine
+            if err.contains("already exists") || err.contains("duplicate") {
+                return nil
+            }
+            throw AnkiConnectError.ankiError(err)
+        }
+
+        if let result = obj["result"] as? Int {
+            return result
+        }
+        return nil
+    }
+
+    /// Adds one note. Returns Anki's note id when present.
+    /// Creates the deck first if it doesn't exist.
     static func addNote(
         deckName: String = defaultDeckName,
         modelName: String = defaultModelName,
@@ -155,6 +198,9 @@ enum AnkiConnectClient {
         example2: String,
         tags: [String] = []
     ) async throws -> Int? {
+        // First ensure the deck exists
+        _ = try? await createDeck(deckName)
+
         let body = AddNotePayload(
             action: "addNote",
             version: apiVersion,
