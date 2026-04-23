@@ -12,6 +12,12 @@ struct BoostVocabView: View {
     @State private var isSendingToAnki = false
     @State private var showSavedBatches = false
     @State private var editingWordPairID: UUID?
+    @State private var topics: [TopicRecord] = []
+    @State private var selectedTopicId: Int64 = 0
+    @State private var newTopicName: String = ""
+    @State private var isLoadingTopics = false
+    @State private var showTopicListPopover = false
+    @State private var showAddTopicPopover = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -62,65 +68,100 @@ struct BoostVocabView: View {
 
             HStack(alignment: .top, spacing: 24) {
                 VStack(spacing: 24) {
-                    HStack(spacing: 16) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Word")
-                                .font(AppTheme.displayFont(size: 16))
-                                .foregroundColor(AppTheme.text)
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .top, spacing: 16) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Topic")
+                                    .font(AppTheme.displayFont(size: 16))
+                                    .foregroundColor(AppTheme.text)
 
-                            ZStack(alignment: .leading) {
-                                if currentWord.isEmpty {
-                                    Text("Enter a word...")
-                                        .font(AppTheme.inputFont())
-                                        .foregroundColor(AppTheme.text.opacity(0.5))
-                                        .padding(.horizontal, 16)
-                                        .allowsHitTesting(false)
+                                if isLoadingTopics {
+                                    Text("Loading…")
+                                        .font(AppTheme.inputFont(size: 14))
+                                        .foregroundColor(AppTheme.text.opacity(0.7))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(16)
+                                        .background(AppTheme.background)
+                                        .overlay(
+                                            Rectangle()
+                                                .stroke(AppTheme.primary, lineWidth: 4)
+                                                .allowsHitTesting(false)
+                                        )
+                                } else {
+                                    BoostTopicPickerRow(
+                                        topics: topics,
+                                        selectedTopicId: $selectedTopicId,
+                                        showTopicListPopover: $showTopicListPopover,
+                                        showAddTopicPopover: $showAddTopicPopover,
+                                        newTopicName: $newTopicName,
+                                        isBusy: isSubmitting || isSendingToAnki,
+                                        onCreateTopic: createTopic
+                                    )
                                 }
-
-                                TextField("", text: $currentWord)
-                                    .font(AppTheme.inputFont())
-                                    .foregroundStyle(AppTheme.text)
-                                    .tint(AppTheme.primary)
-                                    .textFieldStyle(PlainTextFieldStyle())
-                                    .padding(16)
-                                    .onSubmit(addWordPair)
                             }
-                            .background(AppTheme.background)
-                            .overlay(
-                                Rectangle()
-                                    .stroke(AppTheme.primary, lineWidth: 4)
-                                    .allowsHitTesting(false)
-                            )
-                        }
+                            .frame(minWidth: 160, idealWidth: 200, maxWidth: 260, alignment: .leading)
 
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Meaning")
-                                .font(AppTheme.displayFont(size: 16))
-                                .foregroundColor(AppTheme.text)
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Word")
+                                    .font(AppTheme.displayFont(size: 16))
+                                    .foregroundColor(AppTheme.text)
 
-                            ZStack(alignment: .leading) {
-                                if currentMeaning.isEmpty {
-                                    Text("Enter meaning...")
+                                ZStack(alignment: .leading) {
+                                    if currentWord.isEmpty {
+                                        Text("Enter a word...")
+                                            .font(AppTheme.inputFont())
+                                            .foregroundColor(AppTheme.text.opacity(0.5))
+                                            .padding(.horizontal, 16)
+                                            .allowsHitTesting(false)
+                                    }
+
+                                    TextField("", text: $currentWord)
                                         .font(AppTheme.inputFont())
-                                        .foregroundColor(AppTheme.text.opacity(0.5))
-                                        .padding(.horizontal, 16)
-                                        .allowsHitTesting(false)
+                                        .foregroundStyle(AppTheme.text)
+                                        .tint(AppTheme.primary)
+                                        .textFieldStyle(PlainTextFieldStyle())
+                                        .padding(16)
+                                        .onSubmit(addWordPair)
                                 }
-
-                                TextField("", text: $currentMeaning)
-                                    .font(AppTheme.inputFont())
-                                    .foregroundStyle(AppTheme.text)
-                                    .tint(AppTheme.primary)
-                                    .textFieldStyle(PlainTextFieldStyle())
-                                    .padding(16)
-                                    .onSubmit(addWordPair)
+                                .background(AppTheme.background)
+                                .overlay(
+                                    Rectangle()
+                                        .stroke(AppTheme.primary, lineWidth: 4)
+                                        .allowsHitTesting(false)
+                                )
                             }
-                            .background(AppTheme.background)
-                            .overlay(
-                                Rectangle()
-                                    .stroke(AppTheme.primary, lineWidth: 4)
-                                    .allowsHitTesting(false)
-                            )
+                            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Meaning")
+                                    .font(AppTheme.displayFont(size: 16))
+                                    .foregroundColor(AppTheme.text)
+
+                                ZStack(alignment: .leading) {
+                                    if currentMeaning.isEmpty {
+                                        Text("Enter meaning...")
+                                            .font(AppTheme.inputFont())
+                                            .foregroundColor(AppTheme.text.opacity(0.5))
+                                            .padding(.horizontal, 16)
+                                            .allowsHitTesting(false)
+                                    }
+
+                                    TextField("", text: $currentMeaning)
+                                        .font(AppTheme.inputFont())
+                                        .foregroundStyle(AppTheme.text)
+                                        .tint(AppTheme.primary)
+                                        .textFieldStyle(PlainTextFieldStyle())
+                                        .padding(16)
+                                        .onSubmit(addWordPair)
+                                }
+                                .background(AppTheme.background)
+                                .overlay(
+                                    Rectangle()
+                                        .stroke(AppTheme.primary, lineWidth: 4)
+                                        .allowsHitTesting(false)
+                                )
+                            }
+                            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                         }
                     }
                     .padding(24)
@@ -145,7 +186,7 @@ struct BoostVocabView: View {
                                 )
                         }
                         .buttonStyle(PlainButtonStyle())
-                        .disabled(isSubmitting || isSendingToAnki)
+                        .disabled(isSubmitting || isSendingToAnki || selectedTopicId == 0)
 
                         Button(action: submitBatch) {
                             Text(isSubmitting ? "Submitting..." : "Submit")
@@ -160,7 +201,7 @@ struct BoostVocabView: View {
                                 )
                         }
                         .buttonStyle(PlainButtonStyle())
-                        .disabled(isSubmitting || isSendingToAnki || wordPairs.isEmpty)
+                        .disabled(isSubmitting || isSendingToAnki || wordPairs.isEmpty || selectedTopicId == 0)
 
                         Button(action: sendToAnki) {
                             Text(isSendingToAnki ? "Anki…" : "Send to Anki")
@@ -324,6 +365,48 @@ struct BoostVocabView: View {
         .sheet(isPresented: $showSavedBatches) {
             SavedBatchesWindow()
         }
+        .task {
+            await refreshTopics()
+        }
+    }
+
+    private func refreshTopics() async {
+        isLoadingTopics = true
+        defer { isLoadingTopics = false }
+
+        do {
+            let list = try await SupabaseStore.shared.fetchTopics()
+            topics = list
+            if selectedTopicId == 0, let first = list.first {
+                selectedTopicId = first.id
+            } else if selectedTopicId != 0, !list.contains(where: { $0.id == selectedTopicId }) {
+                selectedTopicId = list.first?.id ?? 0
+            }
+        } catch {
+            submitError = true
+            submitMessage = error.localizedDescription
+        }
+    }
+
+    private func createTopic() {
+        let name = newTopicName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        Task { @MainActor in
+            submitMessage = nil
+            submitError = false
+            do {
+                let id = try await SupabaseStore.shared.insertTopic(name: name)
+                newTopicName = ""
+                showAddTopicPopover = false
+                await refreshTopics()
+                selectedTopicId = id
+                submitMessage = "Created topic \"\(name)\""
+            } catch {
+                submitError = true
+                submitMessage = error.localizedDescription
+            }
+        }
     }
 
     private func addWordPair() {
@@ -385,7 +468,8 @@ struct BoostVocabView: View {
                 }
                 let batchID = try await SupabaseStore.shared.saveBatch(
                     words: words,
-                    paragraph: paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+                    paragraph: paragraph.trimmingCharacters(in: .whitespacesAndNewlines),
+                    topicId: selectedTopicId
                 )
                 submitMessage = "Saved batch #\(batchID)"
                 wordPairs = []
@@ -408,6 +492,10 @@ struct BoostVocabView: View {
 
             let pairs = wordPairs
 
+            // Get selected topic name for the deck
+            let deckName = topics.first(where: { $0.id == selectedTopicId })?.name
+                ?? AnkiConnectClient.defaultDeckName
+
             // Open Anki first
             submitMessage = "Opening Anki…"
             AnkiConnectClient.openAnki()
@@ -425,8 +513,9 @@ struct BoostVocabView: View {
                         meaning: pair.meaning
                     )
 
-                    // Send enriched data to Anki
+                    // Send enriched data to Anki using topic name as deck name
                     _ = try await AnkiConnectClient.addNote(
+                        deckName: deckName,
                         word: enriched.word,
                         meaning: enriched.meaning,
                         wordType: enriched.wordType,
@@ -443,7 +532,7 @@ struct BoostVocabView: View {
             }
 
             if failedWords.isEmpty {
-                submitMessage = "Sent \(successCount) note(s) to Anki ✓"
+                submitMessage = "Sent \(successCount) note(s) to Anki (deck: \(deckName)) ✓"
             } else {
                 submitMessage =
                     "Sent \(successCount), failed: \(failedWords.joined(separator: ", "))"
@@ -452,6 +541,228 @@ struct BoostVocabView: View {
         }
     }
 
+}
+
+// MARK: - Topic picker (custom, matches AppTheme bordered inputs)
+
+/// Split out so `BoostVocabView.body` type-checks within the compiler limit.
+private struct BoostTopicPickerRow: View {
+    let topics: [TopicRecord]
+    @Binding var selectedTopicId: Int64
+    @Binding var showTopicListPopover: Bool
+    @Binding var showAddTopicPopover: Bool
+    @Binding var newTopicName: String
+    let isBusy: Bool
+    let onCreateTopic: () -> Void
+
+    private var selectedTitle: String {
+        guard selectedTopicId != 0,
+              let match = topics.first(where: { $0.id == selectedTopicId }) else {
+            return "Select…"
+        }
+        return match.name
+    }
+
+    private var titleColor: Color {
+        selectedTopicId == 0 ? AppTheme.text.opacity(0.5) : AppTheme.text
+    }
+
+    var body: some View {
+        Button {
+            showTopicListPopover = true
+        } label: {
+            HStack(spacing: 10) {
+                Text(selectedTitle)
+                    .font(AppTheme.inputFont())
+                    .foregroundColor(titleColor)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(AppTheme.primary)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PlainButtonStyle())
+        .disabled(topics.isEmpty)
+        .background(AppTheme.background)
+        .overlay(
+            Rectangle()
+                .stroke(AppTheme.primary, lineWidth: 4)
+                .allowsHitTesting(false)
+        )
+        .popover(isPresented: $showTopicListPopover, arrowEdge: .bottom) {
+            TopicListPopover(
+                topics: topics,
+                selectedTopicId: $selectedTopicId,
+                isPresented: $showTopicListPopover,
+                newTopicName: $newTopicName,
+                showAddTopicPopover: $showAddTopicPopover,
+                isBusy: isBusy,
+                onCreate: onCreateTopic
+            )
+        }
+    }
+}
+
+private struct TopicListPopover: View {
+    let topics: [TopicRecord]
+    @Binding var selectedTopicId: Int64
+    @Binding var isPresented: Bool
+    @Binding var newTopicName: String
+    @Binding var showAddTopicPopover: Bool
+    let isBusy: Bool
+    let onCreate: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(Array(topics.enumerated()), id: \.element.id) { index, topic in
+                        Button {
+                            selectedTopicId = topic.id
+                            isPresented = false
+                        } label: {
+                            HStack(alignment: .center, spacing: 10) {
+                                Text(topic.name)
+                                    .font(AppTheme.inputFont(size: 15))
+                                    .foregroundStyle(AppTheme.text)
+                                    .multilineTextAlignment(.leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                if topic.id == selectedTopicId {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(AppTheme.primary)
+                                }
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                topic.id == selectedTopicId
+                                    ? AppTheme.primary.opacity(0.14)
+                                    : Color.clear
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PlainButtonStyle())
+
+                        if index < topics.count - 1 {
+                            Rectangle()
+                                .fill(AppTheme.primary.opacity(0.25))
+                                .frame(height: 2)
+                        }
+                    }
+                }
+            }
+
+            Rectangle()
+                .fill(AppTheme.primary.opacity(0.25))
+                .frame(height: 2)
+
+            Button {
+                newTopicName = ""
+                showAddTopicPopover = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(AppTheme.primary)
+                    Text("New topic")
+                        .font(AppTheme.inputFont(size: 15))
+                        .foregroundColor(AppTheme.text)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PlainButtonStyle())
+            .disabled(isBusy)
+        }
+        .frame(minWidth: 320, idealWidth: 380, maxWidth: 440, maxHeight: 360)
+        .background(AppTheme.card)
+        .overlay(
+            Rectangle()
+                .stroke(AppTheme.primary, lineWidth: 4)
+        )
+        .popover(isPresented: $showAddTopicPopover, arrowEdge: .bottom) {
+            AddTopicPopover(
+                newTopicName: $newTopicName,
+                isBusy: isBusy,
+                onCreate: onCreate
+            )
+        }
+    }
+}
+
+private struct AddTopicPopover: View {
+    @Binding var newTopicName: String
+    let isBusy: Bool
+    let onCreate: () -> Void
+
+    private var trimmed: String {
+        newTopicName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("New topic")
+                .font(AppTheme.displayFont(size: 15))
+                .foregroundColor(AppTheme.text)
+
+            ZStack(alignment: .leading) {
+                if newTopicName.isEmpty {
+                    Text("Topic name")
+                        .font(AppTheme.inputFont())
+                        .foregroundColor(AppTheme.text.opacity(0.5))
+                        .padding(.horizontal, 14)
+                        .allowsHitTesting(false)
+                }
+                TextField("", text: $newTopicName)
+                    .font(AppTheme.inputFont())
+                    .foregroundStyle(AppTheme.text)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .padding(14)
+                    .onSubmit {
+                        if !trimmed.isEmpty && !isBusy {
+                            onCreate()
+                        }
+                    }
+            }
+            .background(AppTheme.background)
+            .overlay(
+                Rectangle()
+                    .stroke(AppTheme.primary, lineWidth: 4)
+                    .allowsHitTesting(false)
+            )
+
+            Button(action: onCreate) {
+                Text("Create")
+                    .font(AppTheme.displayFont(size: 14))
+                    .foregroundColor(AppTheme.background)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(AppTheme.primary)
+                    .overlay(
+                        Rectangle()
+                            .stroke(AppTheme.primary, lineWidth: 4)
+                    )
+            }
+            .buttonStyle(PlainButtonStyle())
+            .disabled(trimmed.isEmpty || isBusy)
+        }
+        .padding(16)
+        .frame(width: 268)
+        .background(AppTheme.card)
+        .overlay(
+            Rectangle()
+                .stroke(AppTheme.primary, lineWidth: 4)
+        )
+    }
 }
 
 struct HighlightedText: View {

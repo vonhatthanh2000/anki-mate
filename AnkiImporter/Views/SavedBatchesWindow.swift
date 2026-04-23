@@ -366,6 +366,9 @@ struct SavedBatchesWindow: View {
                 sendingBatchID = nil
             }
 
+            // Get deck name from first word's topic (all words in batch share same topic)
+            let deckName = batch.words.first?.topicName ?? AnkiConnectClient.defaultDeckName
+
             // Open Anki first
             sendStatusMessage = "Opening Anki…"
             AnkiConnectClient.openAnki()
@@ -397,8 +400,9 @@ struct SavedBatchesWindow: View {
                         print("Failed to update DB for '\(word.word)': \(error.localizedDescription)")
                     }
 
-                    // Send enriched data to Anki
+                    // Send enriched data to Anki using topic name as deck name
                     _ = try await AnkiConnectClient.addNote(
+                        deckName: deckName,
                         word: enriched.word,
                         meaning: enriched.meaning,
                         wordType: enriched.wordType,
@@ -415,7 +419,7 @@ struct SavedBatchesWindow: View {
             }
 
             if failedWords.isEmpty {
-                sendStatusMessage = "Sent \(successCount) note(s) ✓"
+                sendStatusMessage = "Sent \(successCount) note(s) to \(deckName) ✓"
             } else {
                 sendStatusMessage = "Sent \(successCount), failed: \(failedWords.joined(separator: ", "))"
             }

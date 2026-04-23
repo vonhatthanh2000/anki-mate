@@ -10,5 +10,6 @@ agent/.env
 
 # Accidental Supabase CLI state if `link` was run from `agent/` (use repo-root `supabase/` instead)
 agent/supabase/
+backup/
 
 .env

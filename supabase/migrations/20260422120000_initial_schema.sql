@@ -1,23 +1,9 @@
--- Migration: 20260422120000_initial_schema (CLI filename; app version 001)
+-- Migration: 20260422120000_initial_schema
 -- Description: Initial database schema with batches, words, and paragraphs tables
 -- Created: 2026-04-22
-
--- Migration tracking (run this first to track applied migrations)
-CREATE TABLE IF NOT EXISTS schema_migrations (
-    id SERIAL PRIMARY KEY,
-    version VARCHAR(20) UNIQUE NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    applied_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Check if this migration was already applied
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM schema_migrations WHERE version = '001') THEN
-        RAISE NOTICE 'Migration 001_initial_schema already applied, skipping...';
-        RETURN;
-    END IF;
-END $$;
+--
+-- Applied migration history is tracked by Supabase in supabase_migrations.schema_migrations
+-- when you use the Supabase CLI or Dashboard migrations workflow.
 
 -- ============================================
 -- Batches table
@@ -102,10 +88,3 @@ CREATE POLICY "Allow all operations on paragraphs" ON paragraphs
 CREATE INDEX IF NOT EXISTS idx_words_batch_id ON words(batch_id);
 CREATE INDEX IF NOT EXISTS idx_paragraphs_batch_id ON paragraphs(batch_id);
 CREATE INDEX IF NOT EXISTS idx_batches_created_at ON batches(created_at);
-
--- ============================================
--- Record migration
--- ============================================
-INSERT INTO schema_migrations (version, name)
-VALUES ('001', 'initial_schema')
-ON CONFLICT (version) DO NOTHING;

@@ -7,6 +7,8 @@ struct SavedBatchWord: Identifiable, Hashable {
     let wordType: String
     let example1: String
     let example2: String
+    let topicId: Int64
+    let topicName: String?
 }
 
 struct SavedBatch: Identifiable, Hashable {

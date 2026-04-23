@@ -101,6 +101,7 @@ AnkiImporter/
 │   ├── BatchWordInput.swift
 │   ├── AppTheme.swift
 │   ├── WordPair.swift
+│   ├── TopicRecord.swift
 │   └── Feature.swift
 ├── Views/
 │   ├── ContentView.swift
@@ -118,10 +119,11 @@ agent/                             # Python AI agent (bundled)
 └── .env                           # API key (not in repo)
 
 supabase/                          # Database migrations
-├── README.md                      # Migration guide
-├── check_migrations.sql           # Check applied migrations
+├── check_migrations.sql           # Query supabase_migrations.schema_migrations
 └── migrations/
-    └── 20260422120000_initial_schema.sql  # Initial schema (timestamp name for CLI)
+    ├── 20260422120000_initial_schema.sql
+    ├── 20260423120000_add_topic_to_words.sql
+    └── 20260423130000_drop_legacy_public_schema_migrations.sql
 
 supabase_schema.sql                # Database schema for Supabase (legacy)
 ```
@@ -130,22 +132,28 @@ supabase_schema.sql                # Database schema for Supabase (legacy)
 
 Data is now stored in **Supabase** (PostgreSQL cloud database) instead of local SQLite:
 
-- **Tables**: `batches`, `words`, `paragraphs`
+- **Tables**: `batches`, `words`, `paragraphs`, `topics` (words reference `topics.id` via `topic_id`)
 - **Relationships**: Words and paragraphs reference batches via foreign keys
 - **Date Filtering**: Server-side filtering for "This Week" and "This Month" views
-- **Migrations**: Tracked in `schema_migrations` table, files in `supabase/migrations/`
+- **Migrations**: SQL files in `supabase/migrations/`; applied history lives in `supabase_migrations.schema_migrations` when you use the Supabase CLI or Dashboard migrations
 
 ### Schema Setup
 
-Run migrations in order via Supabase SQL Editor:
+Prefer the Supabase CLI so history stays in sync:
 
 ```bash
-# 1. Initial schema (required)
-supabase/migrations/20260422120000_initial_schema.sql
+supabase link   # once, to your project
+supabase db push
+```
 
-# 2. Check migration status
+To inspect what the platform has recorded:
+
+```bash
+# Run in SQL Editor (see file for details)
 supabase/check_migrations.sql
 ```
+
+You can still paste files from `supabase/migrations/` into the SQL Editor, but only CLI/Dashboard migrations reliably maintain `supabase_migrations.schema_migrations`.
 
 ### Manual Setup (without migrations)
 
@@ -157,9 +165,16 @@ CREATE TABLE batches (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE topics (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE words (
     id BIGSERIAL PRIMARY KEY,
     batch_id BIGINT REFERENCES batches(id) ON DELETE CASCADE,
+    topic_id BIGINT NOT NULL REFERENCES topics(id) ON DELETE RESTRICT,
     word TEXT NOT NULL,
     meaning TEXT NOT NULL,
     word_type TEXT DEFAULT '',
@@ -175,10 +190,12 @@ CREATE TABLE paragraphs (
 
 -- Enable RLS and create policies
 ALTER TABLE batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE topics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE words ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paragraphs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow all operations on batches" ON batches FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all operations on topics" ON topics FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations on words" ON words FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations on paragraphs" ON paragraphs FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 ```
@@ -187,9 +204,8 @@ CREATE POLICY "Allow all operations on paragraphs" ON paragraphs FOR ALL TO anon
 
 When upgrading the schema:
 
-1. Check current migration status: `supabase/check_migrations.sql`
-2. Apply new migrations in order (002, 003, etc.)
-3. See [supabase/README.md](supabase/README.md) for full migration guide
+1. Check current migration status: `supabase/check_migrations.sql` (queries `supabase_migrations.schema_migrations`)
+2. Add a new timestamped file under `supabase/migrations/` and run `supabase db push` (or your linked deploy flow)
 
 ## License
 
