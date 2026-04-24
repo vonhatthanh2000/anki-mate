@@ -10,6 +10,12 @@ struct SavedBatchesWindow: View {
     @State private var sendingBatchID: Int64?
     @State private var sendStatusMessage: String?
 
+    // Edit mode states
+    @State private var isEditingBatch: Int64?
+    @State private var editingWords: [SavedBatchWord] = []
+    @State private var editingParagraph: String = ""
+    @State private var saveErrorMessage: String?
+
     private var displayBatches: [SavedBatch] {
         batches
     }
@@ -169,6 +175,8 @@ struct SavedBatchesWindow: View {
 
     @ViewBuilder
     private func batchDetailView(_ batch: SavedBatch) -> some View {
+        let isEditing = isEditingBatch == batch.id
+
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 HStack {
@@ -191,85 +199,71 @@ struct SavedBatchesWindow: View {
                             Text(sendStatusMessage)
                                 .font(AppTheme.inputFont(size: 13))
                                 .foregroundColor(AppTheme.primary)
+                        } else if let saveErrorMessage, isEditing {
+                            Text(saveErrorMessage)
+                                .font(AppTheme.inputFont(size: 13))
+                                .foregroundColor(AppTheme.destructive)
                         }
 
-                        Button(action: { sendBatchToAnki(batch) }) {
-                            Text(sendingBatchID == batch.id ? "Sending…" : "Send to Anki")
-                                .font(AppTheme.displayFont(size: 14))
-                                .foregroundColor(AppTheme.background)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(batch.words.isEmpty ? AppTheme.text.opacity(0.3) : AppTheme.card)
-                                .overlay(
-                                    Rectangle()
-                                        .stroke(AppTheme.primary, lineWidth: 3)
-                                )
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        .disabled(batch.words.isEmpty || sendingBatchID != nil)
-                    }
-                }
-                .padding(24)
-                .background(AppTheme.card)
-                .overlay(
-                    Rectangle()
-                        .stroke(AppTheme.primary, lineWidth: 4)
-                        .allowsHitTesting(false)
-                )
-
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Words (\(batch.words.count))")
-                        .font(AppTheme.displayFont(size: 20))
-                        .foregroundColor(AppTheme.text)
-
-                    if batch.words.isEmpty {
-                        Text("No words in this batch")
-                            .font(AppTheme.inputFont())
-                            .foregroundColor(AppTheme.text.opacity(0.5))
-                    } else {
-                        LazyVStack(spacing: 12) {
-                            ForEach(batch.words) { word in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack {
-                                        Text(word.word)
-                                            .font(.system(size: 18, weight: .bold))
-                                            .foregroundColor(AppTheme.text)
-                                        if !word.wordType.isEmpty {
-                                            Text("(\(word.wordType))")
-                                                .font(AppTheme.inputFont(size: 13))
-                                                .foregroundColor(AppTheme.secondary)
-                                        }
-                                        Spacer()
-                                    }
-
-                                    Text(word.meaning)
-                                        .font(AppTheme.inputFont(size: 15))
-                                        .foregroundColor(AppTheme.text.opacity(0.9))
-
-                                    if !word.example1.isEmpty || !word.example2.isEmpty {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            if !word.example1.isEmpty {
-                                                Text("Ex. 1: \(word.example1)")
-                                                    .font(AppTheme.inputFont(size: 13))
-                                                    .foregroundColor(AppTheme.text.opacity(0.7))
-                                            }
-                                            if !word.example2.isEmpty {
-                                                Text("Ex. 2: \(word.example2)")
-                                                    .font(AppTheme.inputFont(size: 13))
-                                                    .foregroundColor(AppTheme.text.opacity(0.7))
-                                            }
-                                        }
-                                        .padding(.top, 4)
-                                    }
+                        HStack(spacing: 10) {
+                            if isEditing {
+                                Button(action: { cancelEdit() }) {
+                                    Text("Cancel")
+                                        .font(AppTheme.displayFont(size: 14))
+                                        .foregroundColor(AppTheme.text)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(AppTheme.background)
+                                        .overlay(
+                                            Rectangle()
+                                                .stroke(AppTheme.primary, lineWidth: 3)
+                                        )
                                 }
-                                .padding(16)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(AppTheme.background)
-                                .overlay(
-                                    Rectangle()
-                                        .stroke(AppTheme.primary, lineWidth: 3)
-                                        .allowsHitTesting(false)
-                                )
+                                .buttonStyle(PlainButtonStyle())
+
+                                Button(action: { saveBatchEdit(batch) }) {
+                                    Text("Save")
+                                        .font(AppTheme.displayFont(size: 14))
+                                        .foregroundColor(AppTheme.background)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(AppTheme.primary)
+                                        .overlay(
+                                            Rectangle()
+                                                .stroke(AppTheme.primary, lineWidth: 3)
+                                        )
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            } else {
+                                Button(action: { startEditing(batch) }) {
+                                    Text("Edit")
+                                        .font(AppTheme.displayFont(size: 14))
+                                        .foregroundColor(AppTheme.text)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(AppTheme.background)
+                                        .overlay(
+                                            Rectangle()
+                                                .stroke(AppTheme.primary, lineWidth: 3)
+                                        )
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                .disabled(sendingBatchID != nil)
+
+                                Button(action: { sendBatchToAnki(batch) }) {
+                                    Text(sendingBatchID == batch.id ? "Sending…" : "Send to Anki")
+                                        .font(AppTheme.displayFont(size: 14))
+                                        .foregroundColor(AppTheme.background)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(batch.words.isEmpty ? AppTheme.text.opacity(0.3) : AppTheme.card)
+                                        .overlay(
+                                            Rectangle()
+                                                .stroke(AppTheme.primary, lineWidth: 3)
+                                        )
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                .disabled(batch.words.isEmpty || sendingBatchID != nil)
                             }
                         }
                     }
@@ -283,11 +277,62 @@ struct SavedBatchesWindow: View {
                 )
 
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Preview with Highlights")
+                    Text("Words (\(isEditing ? editingWords.count : batch.words.count))")
                         .font(AppTheme.displayFont(size: 20))
                         .foregroundColor(AppTheme.text)
 
-                    if batch.paragraph.isEmpty {
+                    if (isEditing ? editingWords.isEmpty : batch.words.isEmpty) {
+                        Text("No words in this batch")
+                            .font(AppTheme.inputFont())
+                            .foregroundColor(AppTheme.text.opacity(0.5))
+                    } else {
+                        LazyVStack(spacing: 12) {
+                            ForEach(isEditing ? editingWords : batch.words) { word in
+                                if isEditing, let index = editingWords.firstIndex(where: { $0.id == word.id }) {
+                                    editableWordCard(word: $editingWords[index])
+                                } else {
+                                    readOnlyWordCard(word: word)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(24)
+                .background(AppTheme.card)
+                .overlay(
+                    Rectangle()
+                        .stroke(AppTheme.primary, lineWidth: 4)
+                        .allowsHitTesting(false)
+                )
+
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(isEditing ? "Paragraph (editing)" : "Preview with Highlights")
+                        .font(AppTheme.displayFont(size: 20))
+                        .foregroundColor(AppTheme.text)
+
+                    if isEditing {
+                        ZStack(alignment: .topLeading) {
+                            if editingParagraph.isEmpty {
+                                Text("Enter paragraph...")
+                                    .font(AppTheme.inputFont())
+                                    .foregroundColor(AppTheme.text.opacity(0.5))
+                                    .padding(16)
+                                    .allowsHitTesting(false)
+                            }
+                            TextEditor(text: $editingParagraph)
+                                .font(AppTheme.inputFont())
+                                .foregroundColor(AppTheme.text)
+                                .padding(12)
+                                .scrollContentBackground(.hidden)
+                                .frame(minHeight: 120)
+                        }
+                        .background(AppTheme.background)
+                        .overlay(
+                            Rectangle()
+                                .stroke(AppTheme.primary, lineWidth: 3)
+                                .allowsHitTesting(false)
+                        )
+                    } else if batch.paragraph.isEmpty {
                         Text("No paragraph saved with this batch")
                             .font(AppTheme.inputFont())
                             .foregroundColor(AppTheme.text.opacity(0.5))
@@ -424,5 +469,179 @@ struct SavedBatchesWindow: View {
                 sendStatusMessage = "Sent \(successCount), failed: \(failedWords.joined(separator: ", "))"
             }
         }
+    }
+
+    // MARK: - Edit Mode Helpers
+
+    private func startEditing(_ batch: SavedBatch) {
+        isEditingBatch = batch.id
+        editingWords = batch.words.map { $0 }
+        editingParagraph = batch.paragraph
+        saveErrorMessage = nil
+    }
+
+    private func cancelEdit() {
+        isEditingBatch = nil
+        editingWords = []
+        editingParagraph = ""
+        saveErrorMessage = nil
+    }
+
+    private func saveBatchEdit(_ batch: SavedBatch) {
+        Task { @MainActor in
+            saveErrorMessage = nil
+
+            do {
+                // Save paragraph changes
+                if editingParagraph != batch.paragraph {
+                    try await SupabaseStore.shared.updateParagraph(batchId: batch.id, paragraph: editingParagraph)
+                }
+
+                // Save word changes
+                for (index, editedWord) in editingWords.enumerated() {
+                    let originalWord = batch.words[index]
+                    if editedWord.word != originalWord.word ||
+                       editedWord.meaning != originalWord.meaning ||
+                       editedWord.wordType != originalWord.wordType ||
+                       editedWord.example1 != originalWord.example1 ||
+                       editedWord.example2 != originalWord.example2 {
+                        try await SupabaseStore.shared.updateWord(
+                            wordId: editedWord.id,
+                            word: editedWord.word,
+                            meaning: editedWord.meaning,
+                            wordType: editedWord.wordType,
+                            example1: editedWord.example1,
+                            example2: editedWord.example2
+                        )
+                    }
+                }
+
+                // Refresh batches to show saved changes
+                reload()
+                isEditingBatch = nil
+                editingWords = []
+                editingParagraph = ""
+            } catch {
+                saveErrorMessage = "Save failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func readOnlyWordCard(word: SavedBatchWord) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(word.word)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(AppTheme.text)
+                if !word.wordType.isEmpty {
+                    Text("(\(word.wordType))")
+                        .font(AppTheme.inputFont(size: 13))
+                        .foregroundColor(AppTheme.secondary)
+                }
+                Spacer()
+            }
+
+            Text(word.meaning)
+                .font(AppTheme.inputFont(size: 15))
+                .foregroundColor(AppTheme.text.opacity(0.9))
+
+            if !word.example1.isEmpty || !word.example2.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !word.example1.isEmpty {
+                        Text("Ex. 1: \(word.example1)")
+                            .font(AppTheme.inputFont(size: 13))
+                            .foregroundColor(AppTheme.text.opacity(0.7))
+                    }
+                    if !word.example2.isEmpty {
+                        Text("Ex. 2: \(word.example2)")
+                            .font(AppTheme.inputFont(size: 13))
+                            .foregroundColor(AppTheme.text.opacity(0.7))
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.background)
+        .overlay(
+            Rectangle()
+                .stroke(AppTheme.primary, lineWidth: 3)
+                .allowsHitTesting(false)
+        )
+    }
+
+    @ViewBuilder
+    private func editableWordCard(word: Binding<SavedBatchWord>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                TextField("Word", text: word.word)
+                    .font(AppTheme.inputFont(size: 16))
+                    .foregroundColor(AppTheme.text)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .padding(10)
+                    .background(AppTheme.background)
+                    .overlay(
+                        Rectangle()
+                            .stroke(AppTheme.primary, lineWidth: 2)
+                    )
+
+                TextField("Type", text: word.wordType)
+                    .font(AppTheme.inputFont(size: 14))
+                    .foregroundColor(AppTheme.text)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .padding(10)
+                    .frame(width: 100)
+                    .background(AppTheme.background)
+                    .overlay(
+                        Rectangle()
+                            .stroke(AppTheme.primary, lineWidth: 2)
+                    )
+            }
+
+            TextField("Meaning", text: word.meaning)
+                .font(AppTheme.inputFont(size: 14))
+                .foregroundColor(AppTheme.text)
+                .textFieldStyle(PlainTextFieldStyle())
+                .padding(10)
+                .background(AppTheme.background)
+                .overlay(
+                    Rectangle()
+                        .stroke(AppTheme.primary, lineWidth: 2)
+                )
+
+            HStack(spacing: 12) {
+                TextField("Example 1", text: word.example1)
+                    .font(AppTheme.inputFont(size: 12))
+                    .foregroundColor(AppTheme.text)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .padding(10)
+                    .background(AppTheme.background)
+                    .overlay(
+                        Rectangle()
+                            .stroke(AppTheme.primary, lineWidth: 2)
+                    )
+
+                TextField("Example 2", text: word.example2)
+                    .font(AppTheme.inputFont(size: 12))
+                    .foregroundColor(AppTheme.text)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .padding(10)
+                    .background(AppTheme.background)
+                    .overlay(
+                        Rectangle()
+                            .stroke(AppTheme.primary, lineWidth: 2)
+                    )
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.background)
+        .overlay(
+            Rectangle()
+                .stroke(AppTheme.primary, lineWidth: 3)
+                .allowsHitTesting(false)
+        )
     }
 }

@@ -377,6 +377,75 @@ final class SupabaseStore {
         }
     }
 
+    /// Update an existing paragraph.
+    func updateParagraph(batchId: Int64, paragraph: String) async throws {
+        let json: [String: Any] = ["paragraph": paragraph]
+        let data = try JSONSerialization.data(withJSONObject: json)
+
+        var components = URLComponents(url: url.appendingPathComponent("/rest/v1/paragraphs"), resolvingAgainstBaseURL: true)!
+        components.queryItems = [URLQueryItem(name: "batch_id", value: "eq.\(batchId)")]
+
+        guard let endpoint = components.url else {
+            throw BatchStoreError.supabaseError("Invalid paragraphs update URL")
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        applySupabaseAuth(to: &request)
+        request.httpBody = data
+
+        let (respBody, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw BatchStoreError.supabaseError(
+                "Failed to update paragraph — \(Self.describeRestFailure(status: status, body: respBody))"
+            )
+        }
+    }
+
+    /// Update an existing word row.
+    func updateWord(
+        wordId: Int64,
+        word: String,
+        meaning: String,
+        wordType: String,
+        example1: String,
+        example2: String
+    ) async throws {
+        let json: [String: Any] = [
+            "word": word,
+            "meaning": meaning,
+            "word_type": wordType,
+            "example_1": example1,
+            "example_2": example2
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+
+        var components = URLComponents(url: url.appendingPathComponent("/rest/v1/words"), resolvingAgainstBaseURL: true)!
+        components.queryItems = [URLQueryItem(name: "id", value: "eq.\(wordId)")]
+
+        guard let endpoint = components.url else {
+            throw BatchStoreError.supabaseError("Invalid words update URL")
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        applySupabaseAuth(to: &request)
+        request.httpBody = data
+
+        let (respBody, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw BatchStoreError.supabaseError(
+                "Failed to update word #\(wordId) — \(Self.describeRestFailure(status: status, body: respBody))"
+            )
+        }
+    }
+
     /// Update an existing word row with enriched agent fields.
     func updateWordEnrichment(
         wordId: Int64,
