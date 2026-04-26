@@ -36,12 +36,16 @@ struct HomeView: View {
                         .allowsHitTesting(false)
                 )
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 32)], spacing: 32) {
-                    ForEach(features) { feature in
-                        FeatureCard(feature: feature) {
-                            selectedFeature = feature.id
+                HStack {
+                    LazyVGrid(columns: [GridItem(.flexible(minimum: 300, maximum: 400))], spacing: 32) {
+                        ForEach(features) { feature in
+                            FeatureCard(feature: feature) {
+                                selectedFeature = feature.id
+                            }
                         }
                     }
+                    .frame(maxWidth: 400)
+                    Spacer()
                 }
                 .padding(.horizontal, 32)
 
@@ -88,7 +92,7 @@ struct FeatureCard: View {
                     .foregroundColor(AppTheme.text)
             }
             .padding(32)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: 400)
             .background(AppTheme.card)
             .overlay(
                 Rectangle()
