@@ -61,11 +61,13 @@ cp -R "build/AnkiImporter.app" /Applications/
 ### 2. Configure OpenAI API Key
 
 Add your key to `agent/.env`:
+
 ```
 OPENAI_API_KEY=sk-your-key-here
 ```
 
 **Note**: You can also put all credentials in the root `.env` file:
+
 ```
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
@@ -80,6 +82,7 @@ OPENAI_API_KEY=sk-your-key-here
 ### 4. Create Vocab Deck
 
 In Anki, create a deck named "Vocab" with note type containing fields:
+
 - Word
 - Meaning
 - Word type

@@ -15,6 +15,7 @@ struct SavedBatchesWindow: View {
     @State private var editingWords: [SavedBatchWord] = []
     @State private var editingParagraph: String = ""
     @State private var saveErrorMessage: String?
+    @State private var nextDraftWordId: Int64 = -1
 
     private var displayBatches: [SavedBatch] {
         batches
@@ -281,18 +282,42 @@ struct SavedBatchesWindow: View {
                         .font(AppTheme.displayFont(size: 20))
                         .foregroundColor(AppTheme.text)
 
-                    if (isEditing ? editingWords.isEmpty : batch.words.isEmpty) {
+                    if isEditing {
+                        if editingWords.isEmpty {
+                            Text("No words yet — add one below")
+                                .font(AppTheme.inputFont())
+                                .foregroundColor(AppTheme.text.opacity(0.5))
+                        } else {
+                            LazyVStack(spacing: 12) {
+                                ForEach(editingWords) { word in
+                                    if let index = editingWords.firstIndex(where: { $0.id == word.id }) {
+                                        editableWordCard(word: $editingWords[index])
+                                    }
+                                }
+                            }
+                        }
+
+                        Button(action: { addNewWordToEditing(batch) }) {
+                            Text("+ Add word")
+                                .font(AppTheme.displayFont(size: 14))
+                                .foregroundColor(AppTheme.background)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(AppTheme.primary)
+                                .overlay(
+                                    Rectangle()
+                                        .stroke(AppTheme.primary, lineWidth: 3)
+                                )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    } else if batch.words.isEmpty {
                         Text("No words in this batch")
                             .font(AppTheme.inputFont())
                             .foregroundColor(AppTheme.text.opacity(0.5))
                     } else {
                         LazyVStack(spacing: 12) {
-                            ForEach(isEditing ? editingWords : batch.words) { word in
-                                if isEditing, let index = editingWords.firstIndex(where: { $0.id == word.id }) {
-                                    editableWordCard(word: $editingWords[index])
-                                } else {
-                                    readOnlyWordCard(word: word)
-                                }
+                            ForEach(batch.words) { word in
+                                readOnlyWordCard(word: word)
                             }
                         }
                     }
@@ -315,7 +340,7 @@ struct SavedBatchesWindow: View {
                             if editingParagraph.isEmpty {
                                 Text("Enter paragraph...")
                                     .font(AppTheme.inputFont())
-                                    .foregroundColor(AppTheme.text.opacity(0.5))
+                                    .foregroundColor(AppTheme.placeholderText)
                                     .padding(16)
                                     .allowsHitTesting(false)
                             }
@@ -478,6 +503,7 @@ struct SavedBatchesWindow: View {
         editingWords = batch.words.map { $0 }
         editingParagraph = batch.paragraph
         saveErrorMessage = nil
+        nextDraftWordId = -1
     }
 
     private func cancelEdit() {
@@ -485,6 +511,24 @@ struct SavedBatchesWindow: View {
         editingWords = []
         editingParagraph = ""
         saveErrorMessage = nil
+        nextDraftWordId = -1
+    }
+
+    private func addNewWordToEditing(_ batch: SavedBatch) {
+        let topicId = batch.words.first?.topicId ?? 0
+        let topicName = batch.words.first?.topicName
+        let draft = SavedBatchWord(
+            id: nextDraftWordId,
+            word: "",
+            meaning: "",
+            wordType: "",
+            example1: "",
+            example2: "",
+            topicId: topicId,
+            topicName: topicName
+        )
+        nextDraftWordId -= 1
+        editingWords.append(draft)
     }
 
     private func saveBatchEdit(_ batch: SavedBatch) {
@@ -492,23 +536,42 @@ struct SavedBatchesWindow: View {
             saveErrorMessage = nil
 
             do {
-                // Save paragraph changes
                 if editingParagraph != batch.paragraph {
                     try await SupabaseStore.shared.updateParagraph(batchId: batch.id, paragraph: editingParagraph)
                 }
 
-                // Save word changes
-                for (index, editedWord) in editingWords.enumerated() {
-                    let originalWord = batch.words[index]
-                    if editedWord.word != originalWord.word ||
-                       editedWord.meaning != originalWord.meaning ||
+                let topicId = batch.words.first?.topicId ?? editingWords.first(where: { $0.topicId > 0 })?.topicId ?? 0
+                let originalById = Dictionary(uniqueKeysWithValues: batch.words.map { ($0.id, $0) })
+
+                for editedWord in editingWords {
+                    let trimmedWord = editedWord.word.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let trimmedMeaning = editedWord.meaning.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                    if editedWord.id < 0 {
+                        guard !trimmedWord.isEmpty, !trimmedMeaning.isEmpty else { continue }
+                        _ = try await SupabaseStore.shared.addWordToBatch(
+                            batchId: batch.id,
+                            topicId: topicId,
+                            word: trimmedWord,
+                            meaning: trimmedMeaning,
+                            wordType: editedWord.wordType,
+                            example1: editedWord.example1,
+                            example2: editedWord.example2
+                        )
+                        continue
+                    }
+
+                    guard let originalWord = originalById[editedWord.id] else { continue }
+
+                    if trimmedWord != originalWord.word ||
+                       trimmedMeaning != originalWord.meaning ||
                        editedWord.wordType != originalWord.wordType ||
                        editedWord.example1 != originalWord.example1 ||
                        editedWord.example2 != originalWord.example2 {
                         try await SupabaseStore.shared.updateWord(
                             wordId: editedWord.id,
-                            word: editedWord.word,
-                            meaning: editedWord.meaning,
+                            word: trimmedWord,
+                            meaning: trimmedMeaning,
                             wordType: editedWord.wordType,
                             example1: editedWord.example1,
                             example2: editedWord.example2
@@ -516,11 +579,11 @@ struct SavedBatchesWindow: View {
                     }
                 }
 
-                // Refresh batches to show saved changes
                 reload()
                 isEditingBatch = nil
                 editingWords = []
                 editingParagraph = ""
+                nextDraftWordId = -1
             } catch {
                 saveErrorMessage = "Save failed: \(error.localizedDescription)"
             }
@@ -576,63 +639,15 @@ struct SavedBatchesWindow: View {
     private func editableWordCard(word: Binding<SavedBatchWord>) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                TextField("Word", text: word.word)
-                    .font(AppTheme.inputFont(size: 16))
-                    .foregroundColor(AppTheme.text)
-                    .textFieldStyle(PlainTextFieldStyle())
-                    .padding(10)
-                    .background(AppTheme.background)
-                    .overlay(
-                        Rectangle()
-                            .stroke(AppTheme.primary, lineWidth: 2)
-                    )
-
-                TextField("Type", text: word.wordType)
-                    .font(AppTheme.inputFont(size: 14))
-                    .foregroundColor(AppTheme.text)
-                    .textFieldStyle(PlainTextFieldStyle())
-                    .padding(10)
-                    .frame(width: 100)
-                    .background(AppTheme.background)
-                    .overlay(
-                        Rectangle()
-                            .stroke(AppTheme.primary, lineWidth: 2)
-                    )
+                editFieldBox(placeholder: "Word", text: word.word, fontSize: 16)
+                editFieldBox(placeholder: "Type", text: word.wordType, fontSize: 14, width: 100)
             }
 
-            TextField("Meaning", text: word.meaning)
-                .font(AppTheme.inputFont(size: 14))
-                .foregroundColor(AppTheme.text)
-                .textFieldStyle(PlainTextFieldStyle())
-                .padding(10)
-                .background(AppTheme.background)
-                .overlay(
-                    Rectangle()
-                        .stroke(AppTheme.primary, lineWidth: 2)
-                )
+            editFieldBox(placeholder: "Meaning", text: word.meaning, fontSize: 14)
 
             HStack(spacing: 12) {
-                TextField("Example 1", text: word.example1)
-                    .font(AppTheme.inputFont(size: 12))
-                    .foregroundColor(AppTheme.text)
-                    .textFieldStyle(PlainTextFieldStyle())
-                    .padding(10)
-                    .background(AppTheme.background)
-                    .overlay(
-                        Rectangle()
-                            .stroke(AppTheme.primary, lineWidth: 2)
-                    )
-
-                TextField("Example 2", text: word.example2)
-                    .font(AppTheme.inputFont(size: 12))
-                    .foregroundColor(AppTheme.text)
-                    .textFieldStyle(PlainTextFieldStyle())
-                    .padding(10)
-                    .background(AppTheme.background)
-                    .overlay(
-                        Rectangle()
-                            .stroke(AppTheme.primary, lineWidth: 2)
-                    )
+                editFieldBox(placeholder: "Example 1", text: word.example1, fontSize: 12)
+                editFieldBox(placeholder: "Example 2", text: word.example2, fontSize: 12)
             }
         }
         .padding(16)
@@ -643,5 +658,40 @@ struct SavedBatchesWindow: View {
                 .stroke(AppTheme.primary, lineWidth: 3)
                 .allowsHitTesting(false)
         )
+    }
+
+    @ViewBuilder
+    private func editFieldBox(
+        placeholder: String,
+        text: Binding<String>,
+        fontSize: CGFloat,
+        width: CGFloat? = nil
+    ) -> some View {
+        let field = ZStack(alignment: .leading) {
+            if text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(placeholder)
+                    .font(AppTheme.inputFont(size: fontSize))
+                    .foregroundColor(AppTheme.placeholderText)
+                    .allowsHitTesting(false)
+            }
+            TextField("", text: text)
+                .font(AppTheme.inputFont(size: fontSize))
+                .foregroundColor(AppTheme.text)
+                .textFieldStyle(PlainTextFieldStyle())
+        }
+        .padding(10)
+        .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
+        .background(AppTheme.editField)
+        .overlay(
+            Rectangle()
+                .stroke(AppTheme.primary, lineWidth: 2)
+                .allowsHitTesting(false)
+        )
+
+        if let width {
+            field.frame(width: width)
+        } else {
+            field
+        }
     }
 }

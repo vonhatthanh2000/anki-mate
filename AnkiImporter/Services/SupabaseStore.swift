@@ -322,12 +322,30 @@ final class SupabaseStore {
         return id
     }
 
-    private func insertWord(batchId: Int64, topicId: Int64, word: String, meaning: String, wordType: String, example1: String, example2: String) async throws {
+    /// Inserts a word into an existing batch and returns the new row id.
+    func addWordToBatch(
+        batchId: Int64,
+        topicId: Int64,
+        word: String,
+        meaning: String,
+        wordType: String,
+        example1: String,
+        example2: String
+    ) async throws -> Int64 {
+        let trimmedWord = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedMeaning = meaning.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedWord.isEmpty, !trimmedMeaning.isEmpty else {
+            throw BatchStoreError.validation("Word and meaning are required.")
+        }
+        guard topicId > 0 else {
+            throw BatchStoreError.validation("This batch has no topic; cannot add words.")
+        }
+
         let json: [String: Any] = [
             "batch_id": batchId,
             "topic_id": topicId,
-            "word": word,
-            "meaning": meaning,
+            "word": trimmedWord,
+            "meaning": trimmedMeaning,
             "word_type": wordType,
             "example_1": example1,
             "example_2": example2
@@ -338,6 +356,7 @@ final class SupabaseStore {
         var request = URLRequest(url: url.appendingPathComponent("/rest/v1/words"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=representation", forHTTPHeaderField: "Prefer")
         applySupabaseAuth(to: &request)
         request.httpBody = data
 
@@ -347,9 +366,36 @@ final class SupabaseStore {
               (200...299).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
             throw BatchStoreError.supabaseError(
-                "Failed to insert word \"\(word)\" — \(Self.describeRestFailure(status: status, body: respBody))"
+                "Failed to insert word \"\(trimmedWord)\" — \(Self.describeRestFailure(status: status, body: respBody))"
             )
         }
+
+        let jsonObject = try? JSONSerialization.jsonObject(with: respBody)
+        let firstRow: [String: Any]?
+        if let rows = jsonObject as? [[String: Any]] {
+            firstRow = rows.first
+        } else if let row = jsonObject as? [String: Any] {
+            firstRow = row
+        } else {
+            firstRow = nil
+        }
+
+        guard let row = firstRow, let id = Self.parseInt64(row["id"]) else {
+            throw BatchStoreError.supabaseError("Word insert response missing `id`")
+        }
+        return id
+    }
+
+    private func insertWord(batchId: Int64, topicId: Int64, word: String, meaning: String, wordType: String, example1: String, example2: String) async throws {
+        _ = try await addWordToBatch(
+            batchId: batchId,
+            topicId: topicId,
+            word: word,
+            meaning: meaning,
+            wordType: wordType,
+            example1: example1,
+            example2: example2
+        )
     }
 
     private func insertParagraph(batchId: Int64, paragraph: String) async throws {
