@@ -17,6 +17,7 @@ protocol TranscriptLessonStoring {
 
 enum TranscriptLessonWorkflowError: LocalizedError, Equatable {
     case transcriptRequired
+    case invalidOverview
     case invalidItemCount(Int)
     case duplicateItem(String)
     case invalidCategoryTags(String)
@@ -30,6 +31,8 @@ enum TranscriptLessonWorkflowError: LocalizedError, Equatable {
         switch self {
         case .transcriptRequired:
             return "Paste or enter an English transcript before analyzing."
+        case .invalidOverview:
+            return "The Meaning Overview must contain a concise 3–5 sentence summary."
         case .invalidItemCount(let count):
             return "The analysis returned \(count) language items; a lesson needs 6–10 high-value items."
         case .duplicateItem(let expression):
@@ -206,6 +209,11 @@ final class TranscriptLessonWorkflow: ObservableObject {
     }
 
     private func validate(_ analysis: TranscriptLessonAnalysis, transcript: String) throws {
+        guard (3...5).contains(analysis.overview.summary.count),
+              !analysis.overview.mainPoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !analysis.overview.toneAndRegister.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw TranscriptLessonWorkflowError.invalidOverview
+        }
         guard (6...10).contains(analysis.items.count) else {
             throw TranscriptLessonWorkflowError.invalidItemCount(analysis.items.count)
         }

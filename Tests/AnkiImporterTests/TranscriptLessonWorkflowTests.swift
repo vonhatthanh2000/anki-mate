@@ -148,6 +148,61 @@ struct TranscriptLessonWorkflowTests {
     }
 
     @Test
+    func testMeaningOverviewLimitsAndSpeakerAttributionArePersisted() async {
+        let base = LessonFixtures.analysis()
+        let invalidOverview = MeaningOverview(
+            summary: ["Too short.", "Only two sentences."],
+            mainPoint: base.overview.mainPoint,
+            supportingIdeas: base.overview.supportingIdeas,
+            toneAndRegister: base.overview.toneAndRegister,
+            contextNotes: []
+        )
+        let invalidWorkflow = TranscriptLessonWorkflow(
+            analyzer: AnalyzerFake(
+                analysis: TranscriptLessonAnalysis(
+                    overview: invalidOverview,
+                    items: base.items,
+                    exercises: base.exercises
+                )
+            ),
+            store: StoreFake()
+        )
+        invalidWorkflow.updateTranscript(LessonFixtures.transcript)
+
+        await invalidWorkflow.analyze()
+
+        #expect(invalidWorkflow.snapshot.errorMessage?.contains("3–5 sentence") == true)
+
+        let attributedOverview = MeaningOverview(
+            summary: [
+                "The speaker says the evidence was limited.",
+                "According to the speaker, the experiment revealed an unexpected pattern.",
+                "She explains that this led Maya to change course."
+            ],
+            mainPoint: base.overview.mainPoint,
+            supportingIdeas: base.overview.supportingIdeas,
+            toneAndRegister: base.overview.toneAndRegister,
+            contextNotes: []
+        )
+        let store = StoreFake()
+        let attributedWorkflow = TranscriptLessonWorkflow(
+            analyzer: AnalyzerFake(
+                analysis: TranscriptLessonAnalysis(
+                    overview: attributedOverview,
+                    items: base.items,
+                    exercises: base.exercises
+                )
+            ),
+            store: store
+        )
+        attributedWorkflow.updateTranscript(LessonFixtures.transcript)
+
+        await attributedWorkflow.analyze()
+
+        #expect(store.savedLessons.first?.overview == attributedOverview)
+    }
+
+    @Test
     func testAnalysisRejectsConflictingCategoriesAndPracticePriorities() async {
         let base = LessonFixtures.analysis()
         let first = base.items[0]
@@ -195,7 +250,7 @@ struct TranscriptLessonWorkflowTests {
     func testHistoryCanBeLoadedAndACompleteLessonReopened() async throws {
         let analyzer = AnalyzerFake(analysis: LessonFixtures.analysis())
         let store = StoreFake()
-        var saved = store.makeSavedLesson()
+        var saved = store.makeSavedLesson(sourceURL: "https://www.youtube.com/watch?v=example")
         saved.attempts = [
             ExerciseAttempt(
                 id: 7,
@@ -225,6 +280,7 @@ struct TranscriptLessonWorkflowTests {
         #expect(workflow.snapshot.lesson == saved)
         #expect(workflow.snapshot.transcript == LessonFixtures.transcript)
         #expect(workflow.snapshot.lesson?.attempts.first?.answer == "A saved answer")
+        #expect(workflow.snapshot.lesson?.sourceURL == "https://www.youtube.com/watch?v=example")
     }
 
     @Test
@@ -332,12 +388,12 @@ private final class StoreFake: TranscriptLessonStoring {
         return saved
     }
 
-    func makeSavedLesson() -> TranscriptLesson {
+    func makeSavedLesson(sourceURL: String? = nil) -> TranscriptLesson {
         let analysis = LessonFixtures.analysis()
         return TranscriptLesson(
             id: 42,
             createdAt: "2026-08-27T00:00:00Z",
-            sourceURL: nil,
+            sourceURL: sourceURL,
             approvedTranscript: LessonFixtures.transcript,
             overview: analysis.overview,
             items: analysis.items,

@@ -25,7 +25,9 @@ extension SupabaseStore: TranscriptLessonStoring {
 
         do {
             if !lesson.items.isEmpty {
-                let itemRows = lesson.items.map { ItemRow(lessonID: inserted.id, item: $0) }
+                let itemRows = lesson.items.enumerated().map {
+                    ItemRow(lessonID: inserted.id, displayOrder: $0.offset, item: $0.element)
+                }
                 _ = try await transcriptRequest(
                     table: .items,
                     method: .post,
@@ -84,7 +86,7 @@ extension SupabaseStore: TranscriptLessonStoring {
             queryItems: [
                 URLQueryItem(name: "select", value: "*"),
                 URLQueryItem(name: "lesson_id", value: "eq.\(id)"),
-                URLQueryItem(name: "order", value: "span_start.asc")
+                URLQueryItem(name: "order", value: "display_order.asc")
             ]
         )
         let exercisePayload = try await transcriptRequest(
@@ -265,6 +267,7 @@ private struct LessonSummaryRow: Decodable {
 
 private struct ItemRow: Codable {
     let lessonID: Int64
+    let displayOrder: Int
     let itemKey: String
     let expression: String
     let spanStart: Int
@@ -279,8 +282,9 @@ private struct ItemRow: Codable {
     let vietnameseGloss: String?
     let practicePriority: Int?
 
-    init(lessonID: Int64, item: TranscriptLanguageItem) {
+    init(lessonID: Int64, displayOrder: Int, item: TranscriptLanguageItem) {
         self.lessonID = lessonID
+        self.displayOrder = displayOrder
         itemKey = item.id
         expression = item.expression
         spanStart = item.spanStart
@@ -317,6 +321,7 @@ private struct ItemRow: Codable {
     enum CodingKeys: String, CodingKey {
         case expression
         case lessonID = "lesson_id"
+        case displayOrder = "display_order"
         case itemKey = "item_key"
         case spanStart = "span_start"
         case spanEnd = "span_end"

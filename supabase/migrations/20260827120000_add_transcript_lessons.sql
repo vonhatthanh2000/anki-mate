@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS transcript_language_items (
     id BIGSERIAL PRIMARY KEY,
     lesson_id BIGINT NOT NULL REFERENCES transcript_lessons(id) ON DELETE CASCADE,
     item_key TEXT NOT NULL,
+    display_order INTEGER NOT NULL CHECK (display_order >= 0),
     expression TEXT NOT NULL,
     span_start INTEGER NOT NULL CHECK (span_start >= 0),
     span_end INTEGER NOT NULL CHECK (span_end > span_start),
@@ -32,6 +33,7 @@ CREATE TABLE IF NOT EXISTS transcript_language_items (
     vietnamese_gloss TEXT,
     practice_priority INTEGER CHECK (practice_priority BETWEEN 1 AND 5),
     UNIQUE (lesson_id, item_key),
+    UNIQUE (lesson_id, display_order),
     UNIQUE (lesson_id, span_start, span_end)
 );
 
