@@ -1,10 +1,13 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from transcript_lesson import (
     LanguageItem,
     LessonAnalysis,
     LessonExercise,
     MeaningOverview,
+    analyze_transcript,
     normalize_analysis,
 )
 
@@ -113,6 +116,18 @@ class NormalizeAnalysisTests(unittest.TestCase):
         selected = utf16[first.spanStart * 2:first.spanEnd * 2].decode("utf-16-le")
 
         self.assertEqual(selected, first.expression)
+
+    @patch("transcript_lesson._client")
+    def test_analyzer_request_requires_speaker_attribution(self, client_factory):
+        client = client_factory.return_value
+        client.responses.parse.return_value = SimpleNamespace(
+            output_parsed=self.make_analysis()
+        )
+
+        analyze_transcript(self.transcript)
+
+        instructions = client.responses.parse.call_args.kwargs["instructions"]
+        self.assertIn("Attribute unsupported claims to the speaker", instructions)
 
 
 if __name__ == "__main__":
