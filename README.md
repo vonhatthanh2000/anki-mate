@@ -19,6 +19,8 @@
 - Anki desktop app with [AnkiConnect](https://foosoft.net/projects/anki-connect/) add-on
 - OpenAI API key (for AI generation)
 - Supabase account (for cloud database)
+- `yt-dlp` in the bundled Python environment for best-effort URL acquisition
+- `ffmpeg`/`ffprobe` for bounded duration checks and temporary audio extraction
 
 ## Quick Start
 
@@ -61,6 +63,13 @@ cp -R "build/AnkiImporter.app" /Applications/
 
 ### 2. Configure OpenAI API Key
 
+Install or refresh the bundled agent dependencies:
+
+```bash
+python3 -m venv agent/.venv
+agent/.venv/bin/pip install -r agent/requirements.txt
+```
+
 Add your key to `agent/.env`:
 
 ```
@@ -92,6 +101,20 @@ In Anki, create a deck named "Vocab" with note type containing fields:
 - Example 1
 - Example 2
 
+### 5. Create Natural English Note Type
+
+In Anki, create a note type and deck named "Natural English". The note type must contain these exact fields:
+
+- Expression or pattern
+- Category
+- Meaning and usage
+- Original transcript example
+- New natural example
+- CEFR estimate
+- Source URL
+
+Transcript Lessons validates this setup before exporting and will identify missing fields. URL acquisition is best effort; if captions and temporary media acquisition fail, choose an audio/video file you are authorized to use or paste the transcript manually. Local media is copied into an isolated job directory and removed after transcription, failure, or cancellation.
+
 ## Project Structure
 
 ```
@@ -101,6 +124,7 @@ AnkiImporter/
 ├── Services/                      # Business logic
 │   ├── SupabaseStore.swift        # Supabase cloud database
 │   ├── TranscriptLessonWorkflow.swift # Transcript lesson use cases and state
+│   ├── TranscriptAcquisitionAgentClient.swift # Caption/transcription adapter
 │   ├── AnkiConnectClient.swift    # AnkiConnect integration
 │   └── VocabAgentClient.swift     # OpenAI agent integration
 ├── Models/
@@ -125,6 +149,7 @@ agent/                             # Python AI agent (bundled)
 ├── vocab_cli.py                   # CLI wrapper for Swift
 ├── transcript_lesson.py           # Structured transcript analysis and feedback
 ├── transcript_lesson_cli.py       # JSON-over-stdin bridge for Swift
+├── transcript_acquisition_cli.py  # Captions, temporary media, and speech-to-text
 ├── requirements.txt
 ├── .venv/                         # Python dependencies
 └── .env                           # API key (not in repo)
@@ -135,7 +160,8 @@ supabase/                          # Database migrations
     ├── 20260422120000_initial_schema.sql
     ├── 20260423120000_add_topic_to_words.sql
     ├── 20260423130000_drop_legacy_public_schema_migrations.sql
-    └── 20260827120000_add_transcript_lessons.sql
+    ├── 20260827120000_add_transcript_lessons.sql
+    └── 20260827130000_add_transcript_acquisition_and_anki_exports.sql
 
 supabase_schema.sql                # Database schema for Supabase (legacy)
 ```

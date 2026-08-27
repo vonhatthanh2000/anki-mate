@@ -1,9 +1,12 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct TranscriptLessonView: View {
     @Binding var selectedFeature: String?
     @StateObject private var workflow: TranscriptLessonWorkflow
     @State private var isShowingHistory = false
+    @State private var isShowingFileImporter = false
+    @State private var acquisitionTask: Task<Void, Never>?
 
     init(selectedFeature: Binding<String?>) {
         _selectedFeature = selectedFeature
@@ -20,8 +23,8 @@ struct TranscriptLessonView: View {
                 content
             }
 
-            if workflow.snapshot.phase == .analyzing {
-                analyzingOverlay
+            if [.acquiring, .transcribing, .analyzing].contains(workflow.snapshot.phase) {
+                processingOverlay
             }
         }
         .sheet(isPresented: $isShowingHistory) {
@@ -31,11 +34,28 @@ struct TranscriptLessonView: View {
             )
             .frame(minWidth: 680, minHeight: 520)
         }
+        .fileImporter(
+            isPresented: $isShowingFileImporter,
+            allowedContentTypes: [.audio, .movie],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result, let url = urls.first else { return }
+            acquisitionTask = Task {
+                let didAccess = url.startAccessingSecurityScopedResource()
+                defer {
+                    if didAccess { url.stopAccessingSecurityScopedResource() }
+                    acquisitionTask = nil
+                }
+                await workflow.transcribeLocalFile(url)
+            }
+        }
     }
 
     private var header: some View {
         HStack(spacing: 16) {
             Button {
+                acquisitionTask?.cancel()
+                workflow.reset()
                 selectedFeature = nil
             } label: {
                 Label("Back", systemImage: "chevron.left")
@@ -64,6 +84,7 @@ struct TranscriptLessonView: View {
             }
 
             Button {
+                acquisitionTask?.cancel()
                 workflow.reset()
             } label: {
                 Label("New lesson", systemImage: "plus")
@@ -87,9 +108,46 @@ struct TranscriptLessonView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("1. Paste and review the transcript")
+                    Text("1. Start from a short video")
+                    .font(AppTheme.displayFont(size: 22))
+                    .foregroundColor(AppTheme.text)
+                    Text("Use a public YouTube or TikTok URL, upload an authorized local file, or paste a transcript.")
+                        .font(AppTheme.inputFont(size: 15))
+                        .foregroundColor(AppTheme.text.opacity(0.82))
+                }
+
+                HStack(spacing: 10) {
+                    TextField(
+                        "https://www.youtube.com/watch?v=…",
+                        text: Binding(
+                            get: { workflow.snapshot.sourceURL },
+                            set: { workflow.updateSourceURL($0) }
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    Button("Get transcript") {
+                        acquisitionTask = Task {
+                            await workflow.acquireFromSourceURL()
+                            acquisitionTask = nil
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AppTheme.primary)
+                    .disabled(workflow.snapshot.sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("Choose local file…") { isShowingFileImporter = true }
+                        .buttonStyle(.bordered)
+                }
+
+                if let warning = workflow.snapshot.durationWarning {
+                    Label(warning, systemImage: "clock.badge.exclamationmark")
+                        .foregroundColor(AppTheme.primary)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("2. Review the transcript")
                         .font(AppTheme.displayFont(size: 22))
-                        .foregroundColor(AppTheme.text)
                     Text("Correct names, slang, or misheard phrases. Analysis uses exactly the text you approve here.")
                         .font(AppTheme.inputFont(size: 15))
                         .foregroundColor(AppTheme.text.opacity(0.82))
@@ -118,6 +176,16 @@ struct TranscriptLessonView: View {
                         .overlay(Rectangle().stroke(AppTheme.destructive, lineWidth: 2))
                 }
 
+                if workflow.snapshot.canUseManualFallback {
+                    Text(
+                        workflow.snapshot.canRetryAcquisition
+                            ? "You can retry acquisition, choose an authorized local file, or paste the transcript below."
+                            : "Choose an authorized local file or paste the transcript below."
+                    )
+                        .font(AppTheme.inputFont(size: 14))
+                        .foregroundColor(AppTheme.text.opacity(0.82))
+                }
+
                 HStack {
                     Text("English only · best for 1–3 minute videos")
                         .font(AppTheme.inputFont(size: 13))
@@ -141,18 +209,30 @@ struct TranscriptLessonView: View {
         }
     }
 
-    private var analyzingOverlay: some View {
+    private var processingOverlay: some View {
         ZStack {
             Color.black.opacity(0.22).ignoresSafeArea()
             VStack(spacing: 16) {
                 ProgressView().controlSize(.large)
-                Text("Analyzing meaning and natural English…")
+                Text(processingMessage)
                     .font(AppTheme.inputFont(size: 16))
                     .foregroundColor(AppTheme.text)
+                if workflow.snapshot.phase == .acquiring || workflow.snapshot.phase == .transcribing {
+                    Button("Cancel") { acquisitionTask?.cancel() }
+                        .buttonStyle(.bordered)
+                }
             }
             .padding(28)
             .background(AppTheme.editField)
             .overlay(Rectangle().stroke(AppTheme.primary, lineWidth: 3))
+        }
+    }
+
+    private var processingMessage: String {
+        switch workflow.snapshot.phase {
+        case .acquiring: return "Looking for usable captions or temporary media…"
+        case .transcribing: return "Transcribing the authorized local file…"
+        default: return "Analyzing meaning and natural English…"
         }
     }
 }
@@ -167,6 +247,12 @@ private struct TranscriptLessonResultView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    if let sourceURL = lesson.sourceURL, let url = URL(string: sourceURL) {
+                        Link(destination: url) {
+                            Label("Open original source for replay and shadowing", systemImage: "arrow.up.right.square")
+                        }
+                        .font(AppTheme.inputFont(size: 15))
+                    }
                     meaningOverview
                     transcript(proxy: proxy)
                     languageItems
@@ -230,7 +316,12 @@ private struct TranscriptLessonResultView: View {
                 .foregroundColor(AppTheme.text)
 
             ForEach(lesson.items) { item in
-                LanguageItemCard(item: item, isSelected: selectedItemID == item.id)
+                LanguageItemCard(
+                    item: item,
+                    isSelected: selectedItemID == item.id,
+                    isExporting: workflow.snapshot.exportingItemIDs.contains(item.id),
+                    export: { Task { await workflow.exportToAnki(itemID: item.id) } }
+                )
                     .id(item.id)
                     .onTapGesture { selectedItemID = item.id }
             }
@@ -302,6 +393,8 @@ private struct LessonSection<Content: View>: View {
 private struct LanguageItemCard: View {
     let item: TranscriptLanguageItem
     let isSelected: Bool
+    let isExporting: Bool
+    let export: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -335,6 +428,19 @@ private struct LanguageItemCard: View {
             if let vietnameseGloss = item.vietnameseGloss, !vietnameseGloss.isEmpty {
                 Text("Tiếng Việt: \(vietnameseGloss)")
                     .foregroundColor(AppTheme.primary)
+            }
+            HStack {
+                Spacer()
+                Button {
+                    export()
+                } label: {
+                    Label(
+                        item.ankiNoteID == nil ? (isExporting ? "Exporting…" : "Add to Anki") : "Exported to Anki",
+                        systemImage: item.ankiNoteID == nil ? "rectangle.stack.badge.plus" : "checkmark.circle.fill"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .disabled(isExporting || item.ankiNoteID != nil)
             }
         }
         .font(AppTheme.inputFont(size: 15))

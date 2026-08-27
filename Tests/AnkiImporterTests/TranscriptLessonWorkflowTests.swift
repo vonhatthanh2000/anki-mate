@@ -320,6 +320,310 @@ struct TranscriptLessonWorkflowTests {
         #expect(store.savedAttempts.first?.exerciseID == "item-1-recognition")
         #expect(store.savedAttempts.first?.feedback.meaningFeedback == AnalyzerFake.feedback.meaningFeedback)
     }
+
+    @Test
+    func supportedURLsAreCanonicalizedBeforeAcquisition() async {
+        let source = VideoSource(
+            canonicalURL: "https://www.youtube.com/watch?v=abc123",
+            platform: .youtube,
+            title: "A short lesson",
+            durationSeconds: 120,
+            primaryLanguage: "en"
+        )
+        let acquirer = AcquirerFake(
+            result: TranscriptAcquisition(
+                transcript: "English with một chút code-switching preserved.",
+                source: source,
+                method: .captions,
+                detectedLanguage: "en",
+                durationSeconds: 120
+            )
+        )
+        let workflow = TranscriptLessonWorkflow(
+            analyzer: AnalyzerFake(analysis: LessonFixtures.analysis()),
+            store: StoreFake(),
+            acquirer: acquirer,
+            ankiWriter: AnkiWriterFake()
+        )
+        workflow.updateSourceURL("https://youtu.be/abc123?t=10")
+
+        await workflow.acquireFromSourceURL()
+
+        #expect(acquirer.sources.first?.platform == .youtube)
+        #expect(acquirer.sources.first?.canonicalURL == "https://www.youtube.com/watch?v=abc123")
+        #expect(workflow.snapshot.phase == .reviewing)
+        #expect(workflow.snapshot.acquisitionMethod == .captions)
+        #expect(workflow.snapshot.transcript.contains("một chút"))
+    }
+
+    @Test
+    func durationAndEnglishRulesAreEnforcedBeforeAnalysis() async {
+        let longSource = VideoSource(
+            canonicalURL: "https://www.tiktok.com/@speaker/video/123",
+            platform: .tiktok,
+            title: nil,
+            durationSeconds: 301,
+            primaryLanguage: "en"
+        )
+        let longWorkflow = TranscriptLessonWorkflow(
+            analyzer: AnalyzerFake(analysis: LessonFixtures.analysis()),
+            store: StoreFake(),
+            acquirer: AcquirerFake(
+                result: TranscriptAcquisition(
+                    transcript: "A complete transcript.",
+                    source: longSource,
+                    method: .captions,
+                    detectedLanguage: "en",
+                    durationSeconds: 301
+                )
+            ),
+            ankiWriter: AnkiWriterFake()
+        )
+        longWorkflow.updateSourceURL(longSource.canonicalURL)
+        await longWorkflow.acquireFromSourceURL()
+        #expect(longWorkflow.snapshot.phase == .failed)
+        #expect(longWorkflow.snapshot.errorMessage?.contains("five minutes") == true)
+        #expect(longWorkflow.snapshot.canUseManualFallback)
+
+        let nonEnglishSource = VideoSource(
+            canonicalURL: "https://www.youtube.com/watch?v=spanish",
+            platform: .youtube,
+            title: nil,
+            durationSeconds: 90,
+            primaryLanguage: "es"
+        )
+        let nonEnglishWorkflow = TranscriptLessonWorkflow(
+            analyzer: AnalyzerFake(analysis: LessonFixtures.analysis()),
+            store: StoreFake(),
+            acquirer: AcquirerFake(
+                result: TranscriptAcquisition(
+                    transcript: "Una transcripción.",
+                    source: nonEnglishSource,
+                    method: .speechToText,
+                    detectedLanguage: "es",
+                    durationSeconds: 90
+                )
+            ),
+            ankiWriter: AnkiWriterFake()
+        )
+        nonEnglishWorkflow.updateSourceURL(nonEnglishSource.canonicalURL)
+        await nonEnglishWorkflow.acquireFromSourceURL()
+        #expect(nonEnglishWorkflow.snapshot.errorMessage?.contains("primarily es") == true)
+    }
+
+    @Test
+    func localFileTranscriptionReachesReviewAndAnalysisStillWaits() async {
+        let analyzer = AnalyzerFake(analysis: LessonFixtures.analysis())
+        let acquirer = AcquirerFake(
+            result: TranscriptAcquisition(
+                transcript: LessonFixtures.transcript,
+                source: nil,
+                method: .speechToText,
+                detectedLanguage: "english",
+                durationSeconds: 181
+            )
+        )
+        let workflow = TranscriptLessonWorkflow(
+            analyzer: analyzer,
+            store: StoreFake(),
+            acquirer: acquirer,
+            ankiWriter: AnkiWriterFake()
+        )
+
+        await workflow.transcribeLocalFile(URL(fileURLWithPath: "/tmp/authorized.mov"))
+
+        #expect(acquirer.localFiles.map(\.path) == ["/tmp/authorized.mov"])
+        #expect(workflow.snapshot.phase == .reviewing)
+        #expect(workflow.snapshot.durationWarning != nil)
+        #expect(analyzer.analyzeCalls.isEmpty)
+    }
+
+    @Test
+    func missingCaptionsTransitionThroughUrlTranscriptionFallback() async {
+        let source = VideoSource(
+            canonicalURL: "https://www.youtube.com/watch?v=fallback",
+            platform: .youtube,
+            title: nil,
+            durationSeconds: 90,
+            primaryLanguage: "en"
+        )
+        let acquirer = AcquirerFake(
+            result: TranscriptAcquisition(
+                transcript: "A speech-to-text fallback transcript.",
+                source: source,
+                method: .speechToText,
+                detectedLanguage: "en",
+                durationSeconds: 90
+            ),
+            captionsAvailable: false
+        )
+        let workflow = TranscriptLessonWorkflow(
+            analyzer: AnalyzerFake(analysis: LessonFixtures.analysis()),
+            store: StoreFake(),
+            acquirer: acquirer,
+            ankiWriter: AnkiWriterFake()
+        )
+        workflow.updateSourceURL(source.canonicalURL)
+
+        await workflow.acquireFromSourceURL()
+
+        #expect(acquirer.transcribedSources == [source])
+        #expect(workflow.snapshot.acquisitionMethod == .speechToText)
+        #expect(workflow.snapshot.phase == .reviewing)
+    }
+
+    @Test
+    func terminalAndRetryableAcquisitionFailuresAreDistinguished() async {
+        let terminal = TranscriptAcquisitionFailure(
+            stage: .configuration,
+            message: "Install ffmpeg.",
+            retryable: false
+        )
+        let terminalWorkflow = TranscriptLessonWorkflow(
+            analyzer: AnalyzerFake(analysis: LessonFixtures.analysis()),
+            store: StoreFake(),
+            acquirer: AcquirerFake(error: terminal),
+            ankiWriter: AnkiWriterFake()
+        )
+        terminalWorkflow.updateSourceURL("https://youtu.be/terminal")
+        await terminalWorkflow.acquireFromSourceURL()
+        #expect(!terminalWorkflow.snapshot.canRetryAcquisition)
+        #expect(terminalWorkflow.snapshot.canUseManualFallback)
+
+        let retryable = TranscriptAcquisitionFailure(
+            stage: .transcription,
+            message: "Timed out.",
+            retryable: true
+        )
+        let retryWorkflow = TranscriptLessonWorkflow(
+            analyzer: AnalyzerFake(analysis: LessonFixtures.analysis()),
+            store: StoreFake(),
+            acquirer: AcquirerFake(error: retryable),
+            ankiWriter: AnkiWriterFake()
+        )
+        retryWorkflow.updateSourceURL("https://youtu.be/retryable")
+        await retryWorkflow.acquireFromSourceURL()
+        #expect(retryWorkflow.snapshot.canRetryAcquisition)
+        #expect(retryWorkflow.snapshot.failureStage == .transcription)
+    }
+
+    @Test
+    func resetInvalidatesAnInFlightAcquisition() async {
+        let acquirer = SuspendedAcquirerFake()
+        let workflow = TranscriptLessonWorkflow(
+            analyzer: AnalyzerFake(analysis: LessonFixtures.analysis()),
+            store: StoreFake(),
+            acquirer: acquirer,
+            ankiWriter: AnkiWriterFake()
+        )
+        workflow.updateSourceURL("https://youtu.be/cancelled")
+        let task = Task { await workflow.acquireFromSourceURL() }
+        await Task.yield()
+
+        workflow.reset()
+        task.cancel()
+        await task.value
+
+        #expect(workflow.snapshot.phase == .sourceEntry)
+        #expect(workflow.snapshot.transcript.isEmpty)
+        #expect(acquirer.wasCancelled)
+    }
+
+    @Test
+    func naturalEnglishExportPersistsIdentifierAndPreventsDuplicates() async {
+        let store = StoreFake()
+        let saved = store.makeSavedLesson(sourceURL: "https://www.youtube.com/watch?v=example")
+        store.lessonsByID[42] = saved
+        let writer = AnkiWriterFake(noteID: 987654321)
+        let workflow = TranscriptLessonWorkflow(
+            analyzer: AnalyzerFake(analysis: LessonFixtures.analysis()),
+            store: store,
+            acquirer: AcquirerFake(),
+            ankiWriter: writer
+        )
+        await workflow.openLesson(id: 42)
+
+        await workflow.exportToAnki(itemID: "item-1")
+        await workflow.exportToAnki(itemID: "item-1")
+
+        #expect(writer.notes.count == 1)
+        #expect(writer.notes.first?.modelName == "Natural English")
+        #expect(writer.notes.first?.fields["Expression or pattern"] == saved.items[0].expression)
+        #expect(writer.notes.first?.fields["Original transcript example"] == saved.items[0].sourceExcerpt)
+        #expect(writer.notes.first?.fields["Source URL"] == saved.sourceURL)
+        #expect(store.savedExports.count == 1)
+        #expect(workflow.snapshot.lesson?.items[0].ankiNoteID == 987654321)
+        #expect(workflow.snapshot.errorMessage?.contains("already been exported") == true)
+    }
+
+    @Test
+    func noteMappingsPreserveSpecialCharactersAndMultilineText() {
+        let boost = AnkiNoteMapping.boostVocab(
+            deckName: "Vocab",
+            modelName: "Basic",
+            word: "rock & roll <3",
+            meaning: "line one\nline two",
+            wordType: "noun",
+            example1: "‘Quoted’",
+            example2: "emoji 🔬",
+            tags: ["special"]
+        )
+        #expect(boost.fields["Word"] == "rock & roll <3")
+        #expect(boost.fields["Meaning"] == "line one\nline two")
+        #expect(Set(boost.fields.keys) == Set(["Word", "Meaning", "Word type", "Example 1", "Example 2"]))
+    }
+}
+
+@Suite
+struct TranscriptSourceURLTests {
+    @Test
+    func validatesYouTubeAndTikTokForms() throws {
+        #expect(try TranscriptSourceURL.validate("https://youtube.com/shorts/abc").canonicalURL == "https://www.youtube.com/watch?v=abc")
+        #expect(try TranscriptSourceURL.validate("https://m.youtube.com/watch?v=xyz&feature=share").platform == .youtube)
+        #expect(try TranscriptSourceURL.validate("https://www.tiktok.com/@learner/video/123?lang=en").canonicalURL == "https://www.tiktok.com/@learner/video/123")
+        #expect(try TranscriptSourceURL.validate("https://vm.tiktok.com/ZMabc123/").platform == .tiktok)
+    }
+
+    @Test
+    func rejectsUnsupportedAndMalformedURLs() {
+        #expect(throws: TranscriptSourceURLError.self) {
+            try TranscriptSourceURL.validate("https://example.com/video/123")
+        }
+        #expect(throws: TranscriptSourceURLError.self) {
+            try TranscriptSourceURL.validate("not a URL")
+        }
+    }
+
+    @Test
+    func acquisitionAdapterMapsStructuredAndMalformedFailures() throws {
+        let structured = try JSONEncoder().encode(
+            TranscriptAcquisitionFailure(
+                stage: .transcription,
+                message: "Speech service timed out.",
+                retryable: true
+            )
+        )
+        #expect(throws: TranscriptAcquisitionFailure.self) {
+            try TranscriptAcquisitionAgentClient.decode(
+                PythonProcessResult(output: Data(), errorOutput: structured, terminationStatus: 2)
+            )
+        }
+        #expect(throws: TranscriptAcquisitionFailure.self) {
+            try TranscriptAcquisitionAgentClient.decode(
+                PythonProcessResult(output: Data("not-json".utf8), errorOutput: Data(), terminationStatus: 0)
+            )
+        }
+        do {
+            _ = try TranscriptAcquisitionAgentClient.decodeCaptionLookup(
+                PythonProcessResult(output: Data("not-json".utf8), errorOutput: Data(), terminationStatus: 0)
+            )
+            Issue.record("Malformed caption output should fail")
+        } catch let failure as TranscriptAcquisitionFailure {
+            #expect(failure.stage == .acquisition)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
 }
 
 @MainActor
@@ -359,6 +663,7 @@ private final class StoreFake: TranscriptLessonStoring {
     var summaries: [TranscriptLessonSummary] = []
     var lessonsByID: [Int64: TranscriptLesson] = [:]
     var savedAttempts: [ExerciseAttempt] = []
+    var savedExports: [(noteID: Int64, itemID: String, lessonID: Int64)] = []
 
     func saveLesson(_ lesson: TranscriptLesson) async throws -> TranscriptLesson {
         savedLessons.append(lesson)
@@ -388,6 +693,10 @@ private final class StoreFake: TranscriptLessonStoring {
         return saved
     }
 
+    func saveAnkiExport(noteID: Int64, itemID: String, lessonID: Int64) async throws {
+        savedExports.append((noteID, itemID, lessonID))
+    }
+
     func makeSavedLesson(sourceURL: String? = nil) -> TranscriptLesson {
         let analysis = LessonFixtures.analysis()
         return TranscriptLesson(
@@ -400,6 +709,88 @@ private final class StoreFake: TranscriptLessonStoring {
             exercises: analysis.exercises,
             attempts: []
         )
+    }
+}
+
+@MainActor
+private final class AcquirerFake: TranscriptAcquiring {
+    var result: TranscriptAcquisition
+    var error: Error?
+    let captionsAvailable: Bool
+    var sources: [VideoSource] = []
+    var transcribedSources: [VideoSource] = []
+    var localFiles: [URL] = []
+
+    init(
+        result: TranscriptAcquisition = TranscriptAcquisition(
+            transcript: LessonFixtures.transcript,
+            source: nil,
+            method: .speechToText,
+            detectedLanguage: "en",
+            durationSeconds: 60
+        ),
+        error: Error? = nil,
+        captionsAvailable: Bool = true
+    ) {
+        self.result = result
+        self.error = error
+        self.captionsAvailable = captionsAvailable
+    }
+
+    func acquireCaptions(source: VideoSource) async throws -> TranscriptAcquisition? {
+        sources.append(source)
+        if let error { throw error }
+        return captionsAvailable ? result : nil
+    }
+
+    func transcribe(source: VideoSource) async throws -> TranscriptAcquisition {
+        transcribedSources.append(source)
+        if let error { throw error }
+        return result
+    }
+
+    func transcribe(localFile: URL, source: VideoSource?) async throws -> TranscriptAcquisition {
+        localFiles.append(localFile)
+        if let error { throw error }
+        return result
+    }
+}
+
+@MainActor
+private final class AnkiWriterFake: AnkiNoteWriting {
+    let noteID: Int64
+    var notes: [AnkiNote] = []
+
+    init(noteID: Int64 = 123) {
+        self.noteID = noteID
+    }
+
+    func write(_ note: AnkiNote) async throws -> Int64 {
+        notes.append(note)
+        return noteID
+    }
+}
+
+@MainActor
+private final class SuspendedAcquirerFake: TranscriptAcquiring {
+    var wasCancelled = false
+
+    func acquireCaptions(source: VideoSource) async throws -> TranscriptAcquisition? {
+        do {
+            try await Task.sleep(for: .seconds(30))
+            return nil
+        } catch {
+            wasCancelled = true
+            throw error
+        }
+    }
+
+    func transcribe(source: VideoSource) async throws -> TranscriptAcquisition {
+        throw CancellationError()
+    }
+
+    func transcribe(localFile: URL, source: VideoSource?) async throws -> TranscriptAcquisition {
+        throw CancellationError()
     }
 }
 

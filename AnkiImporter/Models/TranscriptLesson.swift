@@ -14,6 +14,33 @@ enum ExerciseKind: String, Codable, Sendable {
     case production
 }
 
+enum VideoPlatform: String, Codable, Equatable, Sendable {
+    case youtube
+    case tiktok
+}
+
+enum TranscriptAcquisitionMethod: String, Codable, Equatable, Sendable {
+    case captions
+    case speechToText = "speech_to_text"
+    case manual
+}
+
+struct VideoSource: Codable, Equatable, Sendable {
+    let canonicalURL: String
+    let platform: VideoPlatform
+    let title: String?
+    let durationSeconds: Double?
+    let primaryLanguage: String?
+}
+
+struct TranscriptAcquisition: Codable, Equatable, Sendable {
+    let transcript: String
+    let source: VideoSource?
+    let method: TranscriptAcquisitionMethod
+    var detectedLanguage: String? = nil
+    var durationSeconds: Double? = nil
+}
+
 struct MeaningOverview: Codable, Equatable, Sendable {
     let summary: [String]
     let mainPoint: String
@@ -38,6 +65,7 @@ struct TranscriptLanguageItem: Identifiable, Codable, Equatable, Sendable {
     let naturalExample: String
     let vietnameseGloss: String?
     let practicePriority: Int?
+    var ankiNoteID: Int64? = nil
 }
 
 struct LessonExercise: Identifiable, Codable, Equatable, Sendable {
@@ -77,9 +105,10 @@ struct TranscriptLesson: Identifiable, Codable, Equatable, Sendable {
     var id: Int64?
     var createdAt: String?
     let sourceURL: String?
+    var source: VideoSource? = nil
     let approvedTranscript: String
     let overview: MeaningOverview
-    let items: [TranscriptLanguageItem]
+    var items: [TranscriptLanguageItem]
     let exercises: [LessonExercise]
     var attempts: [ExerciseAttempt]
 }

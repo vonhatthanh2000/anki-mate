@@ -2,3 +2,4 @@ phidata
 openai
 pydantic
 python-dotenv
+yt-dlp

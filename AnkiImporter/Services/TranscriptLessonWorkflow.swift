@@ -13,6 +13,7 @@ protocol TranscriptLessonStoring {
     func loadLessonSummaries() async throws -> [TranscriptLessonSummary]
     func loadLesson(id: Int64) async throws -> TranscriptLesson
     func saveAttempt(_ attempt: ExerciseAttempt, lessonID: Int64) async throws -> ExerciseAttempt
+    func saveAnkiExport(noteID: Int64, itemID: String, lessonID: Int64) async throws
 }
 
 enum TranscriptLessonWorkflowError: LocalizedError, Equatable {
@@ -26,6 +27,11 @@ enum TranscriptLessonWorkflowError: LocalizedError, Equatable {
     case lessonNotSaved
     case exerciseNotFound
     case answerRequired
+    case sourceTooLong(Double)
+    case sourceLanguageRequired
+    case sourceNotEnglish(String)
+    case itemNotFound
+    case alreadyExported
 
     var errorDescription: String? {
         switch self {
@@ -49,6 +55,16 @@ enum TranscriptLessonWorkflowError: LocalizedError, Equatable {
             return "That exercise is no longer part of this lesson."
         case .answerRequired:
             return "Enter an answer before requesting feedback."
+        case .sourceTooLong(let duration):
+            return "This video is \(Int(duration.rounded())) seconds long. Transcript Lessons supports sources up to five minutes."
+        case .sourceLanguageRequired:
+            return "The source language could not be confirmed as English. Try an authorized local file or paste the transcript manually."
+        case .sourceNotEnglish(let language):
+            return "This source is primarily \(language), but Transcript Lessons currently supports primarily English sources."
+        case .itemNotFound:
+            return "That language item is no longer part of this lesson."
+        case .alreadyExported:
+            return "This language item has already been exported to Anki."
         }
     }
 }
@@ -56,7 +72,9 @@ enum TranscriptLessonWorkflowError: LocalizedError, Equatable {
 @MainActor
 final class TranscriptLessonWorkflow: ObservableObject {
     enum Phase: Equatable {
+        case sourceEntry
         case acquiring
+        case transcribing
         case reviewing
         case analyzing
         case ready
@@ -65,11 +83,19 @@ final class TranscriptLessonWorkflow: ObservableObject {
     }
 
     struct Snapshot: Equatable {
-        var phase: Phase = .acquiring
+        var phase: Phase = .sourceEntry
+        var sourceURL = ""
+        var source: VideoSource?
+        var durationWarning: String?
+        var acquisitionMethod: TranscriptAcquisitionMethod?
         var transcript = ""
         var lesson: TranscriptLesson?
         var history: [TranscriptLessonSummary] = []
         var evaluatingExerciseIDs: Set<String> = []
+        var exportingItemIDs: Set<String> = []
+        var failureStage: TranscriptAcquisitionStage?
+        var canUseManualFallback = false
+        var canRetryAcquisition = false
         var errorMessage: String?
     }
 
@@ -77,28 +103,120 @@ final class TranscriptLessonWorkflow: ObservableObject {
 
     private let analyzer: TranscriptLessonAnalyzing
     private let store: TranscriptLessonStoring
+    private let acquirer: TranscriptAcquiring
+    private let ankiWriter: AnkiNoteWriting
+    private var activeAcquisitionID: UUID?
 
-    init(analyzer: TranscriptLessonAnalyzing, store: TranscriptLessonStoring) {
+    init(
+        analyzer: TranscriptLessonAnalyzing,
+        store: TranscriptLessonStoring,
+        acquirer: TranscriptAcquiring = TranscriptAcquisitionAgentClient(),
+        ankiWriter: AnkiNoteWriting = AnkiConnectClient.shared
+    ) {
         self.analyzer = analyzer
         self.store = store
+        self.acquirer = acquirer
+        self.ankiWriter = ankiWriter
     }
 
     convenience init() {
         self.init(
             analyzer: TranscriptLessonAgentClient(),
-            store: SupabaseStore.shared
+            store: SupabaseStore.shared,
+            acquirer: TranscriptAcquisitionAgentClient(),
+            ankiWriter: AnkiConnectClient.shared
         )
+    }
+
+    func updateSourceURL(_ sourceURL: String) {
+        guard snapshot.phase != .acquiring, snapshot.phase != .transcribing else { return }
+        snapshot.sourceURL = sourceURL
+        snapshot.source = nil
+        snapshot.durationWarning = nil
+        snapshot.errorMessage = nil
+        snapshot.failureStage = nil
+        snapshot.canRetryAcquisition = false
+        activeAcquisitionID = nil
+        snapshot.phase = .sourceEntry
+    }
+
+    func acquireFromSourceURL() async {
+        let acquisitionID = UUID()
+        activeAcquisitionID = acquisitionID
+        do {
+            let source = try TranscriptSourceURL.validate(snapshot.sourceURL)
+            snapshot.sourceURL = source.canonicalURL
+            snapshot.source = source
+            snapshot.phase = .acquiring
+            snapshot.errorMessage = nil
+            snapshot.failureStage = nil
+            snapshot.canUseManualFallback = false
+            if let acquisition = try await acquirer.acquireCaptions(source: source) {
+                guard activeAcquisitionID == acquisitionID else { return }
+                try validateAndLoadForReview(acquisition)
+            } else {
+                guard activeAcquisitionID == acquisitionID else { return }
+                snapshot.phase = .transcribing
+                let acquisition = try await acquirer.transcribe(source: source)
+                guard activeAcquisitionID == acquisitionID else { return }
+                try validateAndLoadForReview(acquisition)
+            }
+        } catch is CancellationError {
+            guard activeAcquisitionID == acquisitionID else { return }
+            failAcquisition(
+                with: TranscriptAcquisitionFailure(
+                    stage: .acquisition,
+                    message: "Cancelled. Temporary media cleanup was requested; you can retry or use a fallback.",
+                    retryable: true
+                )
+            )
+        } catch {
+            guard activeAcquisitionID == acquisitionID else { return }
+            failAcquisition(with: error)
+        }
+    }
+
+    func transcribeLocalFile(_ url: URL) async {
+        let acquisitionID = UUID()
+        activeAcquisitionID = acquisitionID
+        snapshot.phase = .transcribing
+        snapshot.errorMessage = nil
+        snapshot.failureStage = nil
+        snapshot.canUseManualFallback = false
+        do {
+            let acquisition = try await acquirer.transcribe(localFile: url, source: snapshot.source)
+            guard activeAcquisitionID == acquisitionID else { return }
+            try validateAndLoadForReview(acquisition)
+        } catch is CancellationError {
+            guard activeAcquisitionID == acquisitionID else { return }
+            failAcquisition(
+                with: TranscriptAcquisitionFailure(
+                    stage: .transcription,
+                    message: "Cancelled. Temporary media cleanup was requested; you can retry or paste the transcript manually.",
+                    retryable: true
+                )
+            )
+        } catch {
+            guard activeAcquisitionID == acquisitionID else { return }
+            failAcquisition(with: error)
+        }
     }
 
     func updateTranscript(_ transcript: String) {
         guard snapshot.phase != .analyzing else { return }
         snapshot.transcript = transcript
         snapshot.lesson = nil
-        snapshot.phase = transcript.isEmpty ? .acquiring : .reviewing
+        snapshot.phase = transcript.isEmpty ? .sourceEntry : .reviewing
+        snapshot.acquisitionMethod = transcript.isEmpty ? nil : (snapshot.acquisitionMethod ?? .manual)
+        snapshot.canUseManualFallback = false
+        snapshot.failureStage = nil
+        snapshot.canRetryAcquisition = false
+        activeAcquisitionID = nil
         snapshot.errorMessage = nil
     }
 
     func reset() {
+        activeAcquisitionID = nil
         snapshot = Snapshot()
     }
 
@@ -119,7 +237,8 @@ final class TranscriptLessonWorkflow: ObservableObject {
             let draft = TranscriptLesson(
                 id: nil,
                 createdAt: nil,
-                sourceURL: nil,
+                sourceURL: snapshot.source?.canonicalURL,
+                source: snapshot.source,
                 approvedTranscript: approvedTranscript,
                 overview: analysis.overview,
                 items: analysis.items,
@@ -131,6 +250,7 @@ final class TranscriptLessonWorkflow: ObservableObject {
             snapshot.lesson = saved
             snapshot.phase = .ready
         } catch {
+            snapshot.failureStage = nil
             fail(with: error)
         }
     }
@@ -206,6 +326,103 @@ final class TranscriptLessonWorkflow: ObservableObject {
         } catch {
             snapshot.errorMessage = error.localizedDescription
         }
+    }
+
+    func exportToAnki(itemID: String) async {
+        guard var lesson = snapshot.lesson, let lessonID = lesson.id else {
+            snapshot.errorMessage = TranscriptLessonWorkflowError.lessonNotSaved.localizedDescription
+            return
+        }
+        guard let index = lesson.items.firstIndex(where: { $0.id == itemID }) else {
+            snapshot.errorMessage = TranscriptLessonWorkflowError.itemNotFound.localizedDescription
+            return
+        }
+        guard lesson.items[index].ankiNoteID == nil else {
+            snapshot.errorMessage = TranscriptLessonWorkflowError.alreadyExported.localizedDescription
+            return
+        }
+        guard !snapshot.exportingItemIDs.contains(itemID) else { return }
+
+        snapshot.exportingItemIDs.insert(itemID)
+        snapshot.errorMessage = nil
+        defer { snapshot.exportingItemIDs.remove(itemID) }
+        do {
+            let note = AnkiNoteMapping.naturalEnglish(
+                item: lesson.items[index],
+                sourceURL: lesson.sourceURL,
+                deduplicationTag: ankiDeduplicationTag(lessonID: lessonID, itemID: itemID)
+            )
+            let noteID = try await ankiWriter.write(note)
+            do {
+                try await store.saveAnkiExport(noteID: noteID, itemID: itemID, lessonID: lessonID)
+                lesson.items[index].ankiNoteID = noteID
+                snapshot.lesson = lesson
+            } catch {
+                snapshot.errorMessage = "Anki created note \(noteID), but its export state could not be saved: \(error.localizedDescription)"
+            }
+        } catch {
+            snapshot.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func validateAndLoadForReview(_ acquisition: TranscriptAcquisition) throws {
+        let transcript = acquisition.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcript.isEmpty else {
+            throw TranscriptAcquisitionFailure(
+                stage: .transcription,
+                message: "No speech was found. Try another file or paste the transcript manually.",
+                retryable: true
+            )
+        }
+        if let duration = acquisition.durationSeconds ?? acquisition.source?.durationSeconds {
+            guard duration <= 300 else {
+                throw TranscriptLessonWorkflowError.sourceTooLong(duration)
+            }
+            snapshot.durationWarning = duration > 180
+                ? "This source is longer than three minutes. The lesson may be denser than usual."
+                : nil
+        }
+        guard let language = (acquisition.detectedLanguage ?? acquisition.source?.primaryLanguage)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !language.isEmpty else {
+            throw TranscriptLessonWorkflowError.sourceLanguageRequired
+        }
+        let normalizedLanguage = language.lowercased()
+        guard normalizedLanguage == "en" || normalizedLanguage.hasPrefix("en-") || normalizedLanguage == "english" else {
+            throw TranscriptLessonWorkflowError.sourceNotEnglish(language)
+        }
+
+        snapshot.source = acquisition.source ?? snapshot.source
+        snapshot.sourceURL = snapshot.source?.canonicalURL ?? snapshot.sourceURL
+        snapshot.transcript = transcript
+        snapshot.lesson = nil
+        snapshot.acquisitionMethod = acquisition.method
+        snapshot.phase = .reviewing
+        snapshot.errorMessage = nil
+        snapshot.failureStage = nil
+        snapshot.canUseManualFallback = false
+        snapshot.canRetryAcquisition = false
+        activeAcquisitionID = nil
+    }
+
+    private func failAcquisition(with error: Error) {
+        if let failure = error as? TranscriptAcquisitionFailure {
+            snapshot.failureStage = failure.stage
+            snapshot.canRetryAcquisition = failure.retryable
+        } else if error is TranscriptSourceURLError || error is TranscriptLessonWorkflowError {
+            snapshot.failureStage = .acquisition
+            snapshot.canRetryAcquisition = false
+        } else {
+            snapshot.failureStage = .acquisition
+            snapshot.canRetryAcquisition = true
+        }
+        snapshot.canUseManualFallback = true
+        fail(with: error)
+    }
+
+    private func ankiDeduplicationTag(lessonID: Int64, itemID: String) -> String {
+        let exactItemID = itemID.utf8.map { String(format: "%02x", $0) }.joined()
+        return "anki_mate_transcript_\(lessonID)_\(exactItemID)"
     }
 
     private func validate(_ analysis: TranscriptLessonAnalysis, transcript: String) throws {

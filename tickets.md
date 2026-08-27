@@ -85,16 +85,16 @@ Status: Approved
 
 **What to build:** Let the learner export a selected language item once to a dedicated Natural English Anki note while preserving BoostVocab's existing note mapping and behavior.
 
-**Status:** ready-for-agent
+**Status:** implemented
 
-- [ ] AnkiConnect transport, availability checks, deck creation, response parsing, and errors are shared behind a generic note-writing interface.
-- [ ] BoostVocab retains its existing field mapping and behavior.
-- [ ] Natural English notes contain Expression or pattern, Category, Meaning and usage, Original transcript example, New natural example, CEFR estimate, and Source URL.
-- [ ] Missing Natural English note type or fields produce actionable setup guidance.
-- [ ] Anki and AnkiConnect availability failures remain clear and recoverable.
-- [ ] A successful export saves the returned Anki note identifier.
-- [ ] Repeated export of the same language item does not create a duplicate note.
-- [ ] Tests verify both field mappings, special characters, multiline excerpts, errors, and duplicate prevention.
+- [x] AnkiConnect transport, availability checks, deck creation, response parsing, and errors are shared behind a generic note-writing interface.
+- [x] BoostVocab retains its existing field mapping and behavior.
+- [x] Natural English notes contain Expression or pattern, Category, Meaning and usage, Original transcript example, New natural example, CEFR estimate, and Source URL.
+- [x] Missing Natural English note type or fields produce actionable setup guidance.
+- [x] Anki and AnkiConnect availability failures remain clear and recoverable.
+- [x] A successful export saves the returned Anki note identifier.
+- [x] Repeated export of the same language item does not create a duplicate note.
+- [x] Tests verify both field mappings, special characters, multiline excerpts, errors, and duplicate prevention.
 
 ## T6: Acquire editable transcripts from video URLs
 
@@ -102,20 +102,20 @@ Status: Approved
 
 **What to build:** Accept a YouTube or TikTok URL and obtain usable captions when available, then hand the result to the existing editable transcript-review stage. Keep manual transcript paste available when URL acquisition fails.
 
-**Status:** ready-for-agent
+**Status:** implemented
 
-- [ ] Supported YouTube and TikTok URLs are validated, canonicalized, and associated with the correct platform.
-- [ ] Invalid and unsupported URLs fail before expensive processing.
-- [ ] Sources from one to three minutes proceed normally.
-- [ ] Sources longer than three minutes show a warning.
-- [ ] Sources longer than five minutes are rejected as soon as duration becomes known.
-- [ ] Primarily English sources are accepted and occasional code-switching is preserved for context.
-- [ ] Predominantly non-English sources are rejected before lesson analysis.
-- [ ] Usable captions populate the editable transcript-review state.
-- [ ] Analysis still waits for transcript review and the explicit Analyze action.
-- [ ] Acquisition errors are distinguished from analysis errors and offer manual transcript paste.
-- [ ] The lesson retains a link to the original source for independent replay and shadowing.
-- [ ] Workflow tests cover supported URL forms, duration rules, language handling, caption success, and fallback behavior.
+- [x] Supported YouTube and TikTok URLs are validated, canonicalized, and associated with the correct platform.
+- [x] Invalid and unsupported URLs fail before expensive processing.
+- [x] Sources from one to three minutes proceed normally.
+- [x] Sources longer than three minutes show a warning.
+- [x] Sources longer than five minutes are rejected as soon as duration becomes known.
+- [x] Primarily English sources are accepted and occasional code-switching is preserved for context.
+- [x] Predominantly non-English sources are rejected before lesson analysis.
+- [x] Usable captions populate the editable transcript-review state.
+- [x] Analysis still waits for transcript review and the explicit Analyze action.
+- [x] Acquisition errors are distinguished from analysis errors and offer manual transcript paste.
+- [x] The lesson retains a link to the original source for independent replay and shadowing.
+- [x] Workflow tests cover supported URL forms, duration rules, language handling, caption success, and fallback behavior.
 
 ## T7: Transcribe videos when captions are unavailable
 
@@ -123,18 +123,18 @@ Status: Approved
 
 **What to build:** Add best-effort personal-use media acquisition and authorized local-file upload, then generate a transcript with speech-to-text when usable captions are unavailable. Keep all media temporary and surface precise failure states.
 
-**Status:** ready-for-agent
+**Status:** implemented
 
-- [ ] Caption failure can fall back to best-effort local media acquisition.
-- [ ] The learner can supply an authorized local audio or video file when URL acquisition fails.
-- [ ] Speech-to-text returns the complete transcript to the existing review stage.
-- [ ] Downloaded media and extracted audio live in an isolated per-job temporary location.
-- [ ] Temporary media is deleted after successful transcription.
-- [ ] Cleanup is attempted after failure and cancellation.
-- [ ] Acquisition and transcription errors are reported separately and remain retryable where appropriate.
-- [ ] Required acquisition and transcription dependencies are available to the packaged app or produce actionable configuration errors.
-- [ ] Logs and process errors do not expose API keys.
-- [ ] Workflow and adapter contract tests verify transcription fallback, local upload, cleanup, cancellation, malformed output, and error mapping.
+- [x] Caption failure can fall back to best-effort local media acquisition.
+- [x] The learner can supply an authorized local audio or video file when URL acquisition fails.
+- [x] Speech-to-text returns the complete transcript to the existing review stage.
+- [x] Downloaded media and extracted audio live in an isolated per-job temporary location.
+- [x] Temporary media is deleted after successful transcription.
+- [x] Cleanup is attempted after failure and cancellation.
+- [x] Acquisition and transcription errors are reported separately and remain retryable where appropriate.
+- [x] Required acquisition and transcription dependencies are available to the packaged app or produce actionable configuration errors.
+- [x] Logs and process errors do not expose API keys.
+- [x] Workflow and adapter contract tests verify transcription fallback, local upload, cleanup, cancellation, malformed output, and error mapping.
 
 ## T8: Verify the packaged weekly-study workflow
 

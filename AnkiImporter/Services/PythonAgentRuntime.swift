@@ -9,11 +9,14 @@ struct PythonProcessResult: Sendable {
 enum PythonAgentRuntime {
     enum RuntimeError: LocalizedError {
         case scriptNotFound(String)
+        case timedOut
 
         var errorDescription: String? {
             switch self {
             case .scriptNotFound(let name):
                 return "Python agent script not found: \(name)."
+            case .timedOut:
+                return "The Python agent timed out."
             }
         }
     }
@@ -21,15 +24,19 @@ enum PythonAgentRuntime {
     static func run(
         scriptName: String,
         arguments: [String] = [],
-        standardInput: Data? = nil
+        standardInput: Data? = nil,
+        timeoutSeconds: TimeInterval? = nil
     ) async throws -> PythonProcessResult {
         guard let scriptPath = findScriptPath(named: scriptName) else {
             throw RuntimeError.scriptNotFound(scriptName)
         }
         let pythonPath = findPythonPath(forScript: scriptPath)
 
-        return try await Task.detached(priority: .userInitiated) {
+        let holder = PythonProcessHolder()
+        return try await withTaskCancellationHandler {
+            let result = try await Task.detached(priority: .userInitiated) {
             let process = Process()
+            holder.set(process)
             process.executableURL = URL(fileURLWithPath: pythonPath)
             process.arguments = [scriptPath] + arguments
 
@@ -45,7 +52,14 @@ enum PythonAgentRuntime {
                 process.standardInput = pipe
             }
 
-            try process.run()
+            try holder.run(process)
+            let timeoutWorkItem = DispatchWorkItem { holder.timeout() }
+            if let timeoutSeconds {
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(
+                    deadline: .now() + timeoutSeconds,
+                    execute: timeoutWorkItem
+                )
+            }
 
             if let standardInput, let inputPipe {
                 inputPipe.fileHandleForWriting.write(standardInput)
@@ -55,13 +69,25 @@ enum PythonAgentRuntime {
             let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
             let errorOutput = errorPipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
+            timeoutWorkItem.cancel()
+
+            if holder.didTimeOut {
+                throw RuntimeError.timedOut
+            }
 
             return PythonProcessResult(
                 output: output,
                 errorOutput: errorOutput,
                 terminationStatus: process.terminationStatus
             )
-        }.value
+            }.value
+            if holder.wasCancelled {
+                throw CancellationError()
+            }
+            return result
+        } onCancel: {
+            holder.cancel()
+        }
     }
 
     private static func findScriptPath(named scriptName: String) -> String? {
@@ -108,5 +134,64 @@ enum PythonAgentRuntime {
             "/usr/bin/python3"
         ]
         return candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) ?? "python3"
+    }
+}
+
+private final class PythonProcessHolder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var process: Process?
+    private var cancelled = false
+    private var timedOut = false
+
+    var wasCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    var didTimeOut: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return timedOut
+    }
+
+    func set(_ process: Process) {
+        lock.lock()
+        self.process = process
+        let shouldCancel = cancelled
+        lock.unlock()
+        if shouldCancel, process.isRunning {
+            process.terminate()
+        }
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let process = process
+        lock.unlock()
+        if let process, process.isRunning {
+            process.terminate()
+        }
+    }
+
+    func run(_ process: Process) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        if cancelled {
+            throw CancellationError()
+        }
+        try process.run()
+    }
+
+    func timeout() {
+        lock.lock()
+        guard let process, process.isRunning else {
+            lock.unlock()
+            return
+        }
+        timedOut = true
+        lock.unlock()
+        process.terminate()
     }
 }

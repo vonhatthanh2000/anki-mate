@@ -5,6 +5,10 @@ extension SupabaseStore: TranscriptLessonStoring {
     func saveLesson(_ lesson: TranscriptLesson) async throws -> TranscriptLesson {
         let lessonRow = LessonInsertRow(
             sourceURL: lesson.sourceURL,
+            sourcePlatform: lesson.source?.platform,
+            sourceTitle: lesson.source?.title,
+            sourceDurationSeconds: lesson.source?.durationSeconds,
+            sourcePrimaryLanguage: lesson.source?.primaryLanguage,
             approvedTranscript: lesson.approvedTranscript,
             summary: lesson.overview.summary,
             mainPoint: lesson.overview.mainPoint,
@@ -117,6 +121,7 @@ extension SupabaseStore: TranscriptLessonStoring {
             id: row.id,
             createdAt: row.createdAt,
             sourceURL: row.sourceURL,
+            source: row.source,
             approvedTranscript: row.approvedTranscript,
             overview: MeaningOverview(
                 summary: row.summary,
@@ -143,6 +148,23 @@ extension SupabaseStore: TranscriptLessonStoring {
             throw BatchStoreError.supabaseError("Exercise attempt insert response was empty.")
         }
         return inserted.attempt
+    }
+
+    func saveAnkiExport(noteID: Int64, itemID: String, lessonID: Int64) async throws {
+        let response = try await transcriptRequest(
+            table: .items,
+            method: .patch,
+            queryItems: [
+                URLQueryItem(name: "lesson_id", value: "eq.\(lessonID)"),
+                URLQueryItem(name: "item_key", value: "eq.\(itemID)"),
+                URLQueryItem(name: "select", value: "item_key"),
+            ],
+            body: try JSONEncoder().encode(AnkiExportUpdate(ankiNoteID: noteID)),
+            prefer: "return=representation"
+        )
+        guard try JSONDecoder().decode([ExportedItemRow].self, from: response).count == 1 else {
+            throw BatchStoreError.supabaseError("The Anki export was not attached to its language item.")
+        }
     }
 
     private func transcriptRequest(
@@ -201,11 +223,16 @@ private enum TranscriptTable: String {
 private enum TranscriptHTTPMethod: String {
     case get = "GET"
     case post = "POST"
+    case patch = "PATCH"
     case delete = "DELETE"
 }
 
 private struct LessonInsertRow: Encodable {
     let sourceURL: String?
+    let sourcePlatform: VideoPlatform?
+    let sourceTitle: String?
+    let sourceDurationSeconds: Double?
+    let sourcePrimaryLanguage: String?
     let approvedTranscript: String
     let summary: [String]
     let mainPoint: String
@@ -217,6 +244,10 @@ private struct LessonInsertRow: Encodable {
     enum CodingKeys: String, CodingKey {
         case summary
         case sourceURL = "source_url"
+        case sourcePlatform = "source_platform"
+        case sourceTitle = "source_title"
+        case sourceDurationSeconds = "source_duration_seconds"
+        case sourcePrimaryLanguage = "source_primary_language"
         case approvedTranscript = "approved_transcript"
         case mainPoint = "main_point"
         case supportingIdeas = "supporting_ideas"
@@ -230,6 +261,10 @@ private struct LessonRow: Decodable {
     let id: Int64
     let createdAt: String
     let sourceURL: String?
+    let sourcePlatform: VideoPlatform?
+    let sourceTitle: String?
+    let sourceDurationSeconds: Double?
+    let sourcePrimaryLanguage: String?
     let approvedTranscript: String
     let summary: [String]
     let mainPoint: String
@@ -237,10 +272,25 @@ private struct LessonRow: Decodable {
     let toneAndRegister: String
     let contextNotes: [String]
 
+    var source: VideoSource? {
+        guard let sourceURL, let sourcePlatform else { return nil }
+        return VideoSource(
+            canonicalURL: sourceURL,
+            platform: sourcePlatform,
+            title: sourceTitle,
+            durationSeconds: sourceDurationSeconds,
+            primaryLanguage: sourcePrimaryLanguage
+        )
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, summary
         case createdAt = "created_at"
         case sourceURL = "source_url"
+        case sourcePlatform = "source_platform"
+        case sourceTitle = "source_title"
+        case sourceDurationSeconds = "source_duration_seconds"
+        case sourcePrimaryLanguage = "source_primary_language"
         case approvedTranscript = "approved_transcript"
         case mainPoint = "main_point"
         case supportingIdeas = "supporting_ideas"
@@ -281,6 +331,7 @@ private struct ItemRow: Codable {
     let naturalExample: String
     let vietnameseGloss: String?
     let practicePriority: Int?
+    let ankiNoteID: Int64?
 
     init(lessonID: Int64, displayOrder: Int, item: TranscriptLanguageItem) {
         self.lessonID = lessonID
@@ -298,6 +349,7 @@ private struct ItemRow: Codable {
         naturalExample = item.naturalExample
         vietnameseGloss = item.vietnameseGloss
         practicePriority = item.practicePriority
+        ankiNoteID = item.ankiNoteID
     }
 
     var item: TranscriptLanguageItem {
@@ -314,7 +366,8 @@ private struct ItemRow: Codable {
             selectionRationale: selectionRationale,
             naturalExample: naturalExample,
             vietnameseGloss: vietnameseGloss,
-            practicePriority: practicePriority
+            practicePriority: practicePriority,
+            ankiNoteID: ankiNoteID
         )
     }
 
@@ -334,6 +387,23 @@ private struct ItemRow: Codable {
         case naturalExample = "natural_example"
         case vietnameseGloss = "vietnamese_gloss"
         case practicePriority = "practice_priority"
+        case ankiNoteID = "anki_note_id"
+    }
+}
+
+private struct AnkiExportUpdate: Encodable {
+    let ankiNoteID: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case ankiNoteID = "anki_note_id"
+    }
+}
+
+private struct ExportedItemRow: Decodable {
+    let itemKey: String
+
+    enum CodingKeys: String, CodingKey {
+        case itemKey = "item_key"
     }
 }
 

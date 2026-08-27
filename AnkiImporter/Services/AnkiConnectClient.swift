@@ -1,193 +1,162 @@
-import Foundation
 import AppKit
+import Foundation
 
-/// Posts notes to [AnkiConnect](https://foosoft.net/projects/anki-connect/) on `http://127.0.0.1:8765`.
-/// Field names must match your note type in Anki exactly (same as the old `anki.py` script).
-enum AnkiConnectClient {
-    /// Change these to match your Anki deck and note type (Tools → Manage note types).
-    static let defaultDeckName = "Vocab"
-    static let defaultModelName = "Basic"
+struct AnkiNote: Equatable, Sendable {
+    let deckName: String
+    let modelName: String
+    let fields: [String: String]
+    let tags: [String]
+    var deduplicationTag: String? = nil
+}
 
-    private static let connectURL = URL(string: "http://127.0.0.1:8765")!
-    private static let apiVersion = 6
-    private static let ankiBundleIDs = [
-        "net.ankiweb.dtop",         // Anki 2.1.x
-        "org.qt-project.Qt.QtWebEngine",
-        "com.anki.drive",           // Alternative
-    ]
+@MainActor
+protocol AnkiNoteWriting {
+    func write(_ note: AnkiNote) async throws -> Int64
+}
 
-    enum AnkiConnectError: LocalizedError {
+enum AnkiNoteMapping {
+    static func boostVocab(
+        deckName: String,
+        modelName: String,
+        word: String,
+        meaning: String,
+        wordType: String,
+        example1: String,
+        example2: String,
+        tags: [String]
+    ) -> AnkiNote {
+        AnkiNote(
+            deckName: deckName,
+            modelName: modelName,
+            fields: [
+                "Word": word,
+                "Meaning": meaning,
+                "Word type": wordType,
+                "Example 1": example1,
+                "Example 2": example2,
+            ],
+            tags: tags
+        )
+    }
+
+    static func naturalEnglish(
+        item: TranscriptLanguageItem,
+        sourceURL: String?,
+        deduplicationTag: String
+    ) -> AnkiNote {
+        AnkiNote(
+            deckName: AnkiConnectClient.naturalEnglishDeckName,
+            modelName: AnkiConnectClient.naturalEnglishModelName,
+            fields: [
+                "Expression or pattern": item.expression,
+                "Category": item.primaryCategory.rawValue,
+                "Meaning and usage": item.meaningAndUsage,
+                "Original transcript example": item.sourceExcerpt,
+                "New natural example": item.naturalExample,
+                "CEFR estimate": item.cefrEstimate,
+                "Source URL": sourceURL ?? "",
+            ],
+            tags: ["anki-mate", "natural-english", deduplicationTag],
+            deduplicationTag: deduplicationTag
+        )
+    }
+}
+
+/// Generic AnkiConnect note writer shared by BoostVocab and Transcript Lessons.
+@MainActor
+final class AnkiConnectClient: AnkiNoteWriting {
+    static let shared = AnkiConnectClient()
+    nonisolated static let defaultDeckName = "Vocab"
+    nonisolated static let defaultModelName = "Basic"
+    nonisolated static let naturalEnglishDeckName = "Natural English"
+    nonisolated static let naturalEnglishModelName = "Natural English"
+
+    enum AnkiConnectError: LocalizedError, Equatable {
+        case unavailable
         case invalidResponse
         case httpStatus(Int)
         case ankiError(String)
-        case ankiNotFound
+        case missingModel(String)
+        case missingFields(model: String, fields: [String])
+        case noteIdentifierMissing
 
         var errorDescription: String? {
             switch self {
+            case .unavailable:
+                return "AnkiConnect is unavailable. Open Anki, install and enable the AnkiConnect add-on, then try again."
             case .invalidResponse:
-                return "Invalid response from AnkiConnect."
+                return "AnkiConnect returned an invalid response. Restart Anki and try again."
             case .httpStatus(let code):
-                return "AnkiConnect HTTP error (\(code)). Is Anki running with the add-on?"
+                return "AnkiConnect returned HTTP \(code). Make sure Anki and the AnkiConnect add-on are running."
             case .ankiError(let message):
-                return message
-            case .ankiNotFound:
-                return "Anki application not found. Please install Anki."
+                return "AnkiConnect: \(message)"
+            case .missingModel(let model):
+                return "Create an Anki note type named “\(model)” with the required Natural English fields, then try again."
+            case .missingFields(let model, let fields):
+                return "The “\(model)” note type is missing these fields: \(fields.joined(separator: ", ")). Add them in Anki → Tools → Manage Note Types."
+            case .noteIdentifierMissing:
+                return "Anki added no note identifier, so the export could not be recorded safely."
             }
         }
     }
 
-    /// Finds Anki application URL by checking multiple methods.
-    private static func findAnkiURL() -> URL? {
-        // Try bundle identifiers
-        for bundleID in ankiBundleIDs {
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-                print("Found Anki with bundle ID: \(bundleID)")
-                return url
-            }
-        }
+    private let endpoint: URL
+    private let session: URLSession
+    private let apiVersion = 6
 
-        // Try searching in common locations
-        let commonPaths = [
-            "/Applications/Anki.app",
-            "~/Applications/Anki.app",
-            "/Users/*/Applications/Anki.app",
-            "/opt/homebrew/Caskroom/anki/*/Anki.app",
-            "/usr/local/Caskroom/anki/*/Anki.app",
-        ]
-
-        for path in commonPaths {
-            let expandedPath = NSString(string: path).expandingTildeInPath
-            let url = URL(fileURLWithPath: expandedPath)
-            if FileManager.default.fileExists(atPath: url.path) {
-                print("Found Anki at: \(url.path)")
-                return url
-            }
-        }
-
-        // Try to find by file type association
-        let fileManager = FileManager.default
-        let domains: [FileManager.SearchPathDomainMask] = [.systemDomainMask, .localDomainMask, .userDomainMask]
-
-        for domain in domains {
-            let appDirs = fileManager.urls(for: .applicationDirectory, in: domain)
-            for appDir in appDirs {
-                let ankiURL = appDir.appendingPathComponent("Anki.app")
-                if fileManager.fileExists(atPath: ankiURL.path) {
-                    print("Found Anki in app directory: \(ankiURL.path)")
-                    return ankiURL
-                }
-            }
-        }
-
-        return nil
+    init(
+        endpoint: URL = URL(string: "http://127.0.0.1:8765")!,
+        session: URLSession = .shared
+    ) {
+        self.endpoint = endpoint
+        self.session = session
     }
 
-    /// Checks if Anki is running by checking running applications.
-    private static func isAnkiRunning() -> Bool {
-        let runningApps = NSWorkspace.shared.runningApplications
+    func write(_ note: AnkiNote) async throws -> Int64 {
+        _ = try await invoke(action: "version")
 
-        // Check by bundle ID
-        for app in runningApps {
-            if let bundleID = app.bundleIdentifier {
-                if ankiBundleIDs.contains(bundleID) {
-                    print("Anki is running with bundle ID: \(bundleID)")
-                    return true
-                }
-            }
+        let modelNames = try await invoke(action: "modelNames")
+        guard let names = modelNames as? [String], names.contains(note.modelName) else {
+            throw AnkiConnectError.missingModel(note.modelName)
         }
 
-        // Check by name (fallback)
-        for app in runningApps {
-            let name = app.localizedName?.lowercased() ?? ""
-            if name.contains("anki") {
-                print("Anki is running (detected by name): \(app.localizedName ?? "Unknown")")
-                return true
-            }
-        }
-
-        return false
-    }
-
-    /// Opens Anki application using 'open -a' command.
-    /// Does not check if already running - just executes the command.
-    static func openAnki() {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = ["-a", "/Applications/Anki.app"]
-
-        do {
-            try process.run()
-            print("Executed: open -a /Applications/Anki.app")
-        } catch {
-            print("Failed to open Anki: \(error)")
-        }
-    }
-
-    /// Quick ping to check if AnkiConnect is responding.
-    private static func pingAnkiConnect() async -> Bool {
-        let pingBody: [String: Any] = ["action": "version", "version": apiVersion]
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: pingBody) else {
-            return false
-        }
-
-        var request = URLRequest(url: connectURL)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 2
-        request.httpBody = jsonData
-
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else { return false }
-            return (200...299).contains(http.statusCode)
-        } catch {
-            return false
-        }
-    }
-
-    /// Creates a deck if it doesn't exist. Returns the deck ID.
-    static func createDeck(_ name: String) async throws -> Int? {
-        let payload: [String: Any] = [
-            "action": "createDeck",
-            "version": apiVersion,
-            "params": ["deck": name]
-        ]
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            return nil
-        }
-
-        var request = URLRequest(url: connectURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
+        let modelFields = try await invoke(
+            action: "modelFieldNames",
+            params: ["modelName": note.modelName]
+        )
+        guard let availableFields = modelFields as? [String] else {
             throw AnkiConnectError.invalidResponse
         }
-        guard (200 ... 299).contains(http.statusCode) else {
-            throw AnkiConnectError.httpStatus(http.statusCode)
+        let missingFields = note.fields.keys.filter { !availableFields.contains($0) }.sorted()
+        guard missingFields.isEmpty else {
+            throw AnkiConnectError.missingFields(model: note.modelName, fields: missingFields)
         }
 
-        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-
-        if let err = obj["error"] as? String, !err.isEmpty {
-            // Deck might already exist, which is fine
-            if err.contains("already exists") || err.contains("duplicate") {
-                return nil
+        if let tag = note.deduplicationTag {
+            let matches = try await invoke(action: "findNotes", params: ["query": "tag:\(tag)"])
+            if let identifiers = matches as? [NSNumber], let existing = identifiers.first {
+                return existing.int64Value
             }
-            throw AnkiConnectError.ankiError(err)
         }
 
-        if let result = obj["result"] as? Int {
-            return result
+        _ = try await invoke(action: "createDeck", params: ["deck": note.deckName])
+        let result = try await invoke(
+            action: "addNote",
+            params: [
+                "note": [
+                    "deckName": note.deckName,
+                    "modelName": note.modelName,
+                    "fields": note.fields,
+                    "tags": note.tags,
+                ] as [String: Any]
+            ]
+        )
+        if let identifier = result as? NSNumber {
+            return identifier.int64Value
         }
-        return nil
+        throw AnkiConnectError.noteIdentifierMissing
     }
 
-    /// Adds one note. Returns Anki's note id when present.
-    /// Creates the deck first if it doesn't exist.
     static func addNote(
         deckName: String = defaultDeckName,
         modelName: String = defaultModelName,
@@ -198,95 +167,56 @@ enum AnkiConnectClient {
         example2: String,
         tags: [String] = []
     ) async throws -> Int? {
-        // First ensure the deck exists
-        _ = try? await createDeck(deckName)
-
-        let body = AddNotePayload(
-            action: "addNote",
-            version: apiVersion,
-            params: AddNotePayload.Params(
-                note: AddNotePayload.Note(
-                    deckName: deckName,
-                    modelName: modelName,
-                    fields: AddNotePayload.Fields(
-                        word: word,
-                        meaning: meaning,
-                        wordType: wordType,
-                        example1: example1,
-                        example2: example2
-                    ),
-                    tags: tags
-                )
-            )
+        let note = AnkiNoteMapping.boostVocab(
+            deckName: deckName,
+            modelName: modelName,
+            word: word,
+            meaning: meaning,
+            wordType: wordType,
+            example1: example1,
+            example2: example2,
+            tags: tags
         )
+        return Int(try await shared.write(note))
+    }
 
-        var request = URLRequest(url: connectURL)
+    static func openAnki() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", "/Applications/Anki.app"]
+        try? process.run()
+    }
+
+    private func invoke(action: String, params: [String: Any]? = nil) async throws -> Any {
+        var payload: [String: Any] = ["action": action, "version": apiVersion]
+        if let params { payload["params"] = params }
+
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
+        request.timeoutInterval = 5
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(body)
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw AnkiConnectError.unavailable
+        }
         guard let http = response as? HTTPURLResponse else {
             throw AnkiConnectError.invalidResponse
         }
-        guard (200 ... 299).contains(http.statusCode) else {
+        guard (200...299).contains(http.statusCode) else {
             throw AnkiConnectError.httpStatus(http.statusCode)
         }
-
-        guard
-            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object.keys.contains("result"), object.keys.contains("error") else {
             throw AnkiConnectError.invalidResponse
         }
-
-        if let err = obj["error"] as? String, !err.isEmpty {
-            throw AnkiConnectError.ankiError(err)
+        if let error = object["error"] as? String, !error.isEmpty {
+            throw AnkiConnectError.ankiError(error)
         }
-
-        if let result = obj["result"] {
-            if result is NSNull {
-                return nil
-            }
-            if let id = result as? Int {
-                return id
-            }
-            if let id = result as? Int64 {
-                return Int(id)
-            }
-        }
-        return nil
-    }
-}
-
-private struct AddNotePayload: Encodable {
-    var action: String
-    var version: Int
-    var params: Params
-
-    struct Params: Encodable {
-        var note: Note
-    }
-
-    struct Note: Encodable {
-        var deckName: String
-        var modelName: String
-        var fields: Fields
-        var tags: [String]
-    }
-
-    struct Fields: Encodable {
-        var word: String
-        var meaning: String
-        var wordType: String
-        var example1: String
-        var example2: String
-
-        enum CodingKeys: String, CodingKey {
-            case word = "Word"
-            case meaning = "Meaning"
-            case wordType = "Word type"
-            case example1 = "Example 1"
-            case example2 = "Example 2"
-        }
+        return object["result"] ?? NSNull()
     }
 }
