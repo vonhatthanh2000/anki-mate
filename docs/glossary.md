@@ -12,13 +12,58 @@ The dedicated Anki note type for transcript-derived expressions and grammar patt
 
 A listening-comprehension experience derived from the transcript of one short YouTube or TikTok video. Analysis and practice prepare the learner to understand the source more fully when listening again.
 
+## Lesson history
+
+The saved collection of transcript lessons and their progress, including analysis, exercise attempts, feedback, and Anki export state, but excluding downloaded source media.
+
+## Anki export state
+
+The per-item record of whether a selected language item has already been added to Anki, used to prevent accidental duplicate exports.
+
 ## Language item
 
-A transcript excerpt selected for learning and classified as vocabulary, an idiom, a phrasal verb, a collocation, slang, or a grammar pattern.
+A unique transcript excerpt selected for learning. It has one primary category and may have secondary category tags when natural-language classifications overlap.
+
+## Primary category
+
+The single category used to organize and display a language item in the lesson.
+
+## Secondary category tag
+
+An additional valid classification attached to the same language item without duplicating its analysis, practice, or Anki card.
+
 
 ## Source excerpt
 
 The exact surrounding transcript text that demonstrates how a language item was used naturally in the source video.
+
+## Cleaned transcript
+
+The complete source transcript with caption artifacts and obvious transcription noise removed while preserving the speaker's wording. It anchors the lesson and contains inline links to selected language items.
+
+## Approved transcript
+
+The transcript after learner review and optional correction. It is the authoritative input used to generate and save the lesson analysis.
+
+## Primarily English source
+
+A video whose main spoken content is English. Occasional code-switching is permitted for context, but predominantly non-English videos do not produce transcript lessons.
+
+## Source-duration target
+
+The intended 1–3 minute length for a transcript lesson source. The first version warns above three minutes and rejects sources longer than five minutes.
+
+## Targeted Vietnamese gloss
+
+A brief Vietnamese clarification attached only to a difficult sentence or sentence-level analysis. It is support for a specific obstacle, not a translation of the entire transcript or lesson.
+
+## Meaning Overview
+
+The concise opening of a transcript lesson that explains the source's summary, main point, supporting ideas, tone, register, implications, and necessary cultural context before item-level language analysis.
+
+## Attributed claim
+
+A concise description of a source assertion framed as something the speaker says or claims, rather than as an independently verified fact.
 
 ## CEFR level
 
@@ -50,7 +95,7 @@ An exercise that checks whether the learner can recognize meaning or appropriate
 
 ## Active production
 
-A task requiring the learner to retrieve and use target language in a paraphrase or original example, followed by feedback on correctness and naturalness.
+A typed task requiring the learner to retrieve and use target language in a paraphrase or original example, followed by feedback on correctness and naturalness. It does not include voice recording.
 
 ## Transcript acquisition
 
