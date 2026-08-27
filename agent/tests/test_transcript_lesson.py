@@ -105,6 +105,15 @@ class NormalizeAnalysisTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "6–10 unique expressions"):
             normalize_analysis(analysis, self.transcript)
 
+    def test_spans_use_utf16_offsets_expected_by_swift(self):
+        transcript = "🔬 " + self.transcript
+        normalized = normalize_analysis(self.make_analysis(), transcript)
+        first = normalized.items[0]
+        utf16 = transcript.encode("utf-16-le")
+        selected = utf16[first.spanStart * 2:first.spanEnd * 2].decode("utf-16-le")
+
+        self.assertEqual(selected, first.expression)
+
 
 if __name__ == "__main__":
     unittest.main()

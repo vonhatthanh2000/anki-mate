@@ -98,7 +98,7 @@ struct TranscriptLessonView: View {
                 TextEditor(
                     text: Binding(
                         get: { workflow.snapshot.transcript },
-                        set: workflow.updateTranscript
+                        set: { workflow.updateTranscript($0) }
                     )
                 )
                 .font(AppTheme.inputFont(size: 16))
@@ -379,10 +379,12 @@ private struct ExerciseCard: View {
                     Text(attempt.feedback.isCorrect ? "Good work" : "Try this revision")
                         .fontWeight(.semibold)
                     Text(attempt.feedback.explanation)
+                    Text("Meaning: \(attempt.feedback.meaningFeedback)")
+                    Text("Correctness: \(attempt.feedback.correctnessFeedback)")
+                    Text("Context: \(attempt.feedback.appropriatenessFeedback)")
+                    Text("Naturalness: \(attempt.feedback.naturalnessFeedback)")
                     Text("Natural revision: \(attempt.feedback.naturalRevision)")
                         .italic()
-                    Text(attempt.feedback.naturalnessFeedback)
-                        .foregroundColor(AppTheme.text.opacity(0.75))
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -401,17 +403,9 @@ private enum HighlightedTranscriptBuilder {
     static func make(transcript: String, items: [TranscriptLanguageItem]) -> AttributedString {
         var attributed = AttributedString(transcript)
         for item in items {
-            guard let lower = transcript.index(
-                transcript.startIndex,
-                offsetBy: item.spanStart,
-                limitedBy: transcript.endIndex
-            ),
-            let upper = transcript.index(
-                transcript.startIndex,
-                offsetBy: item.spanEnd,
-                limitedBy: transcript.endIndex
-            ),
-            let range = Range(lower..<upper, in: attributed),
+            let nsRange = NSRange(location: item.spanStart, length: item.spanEnd - item.spanStart)
+            guard let stringRange = Range(nsRange, in: transcript),
+            let range = Range(stringRange, in: attributed),
             let link = URL(string: "anki-mate://lesson-item/\(item.id)") else {
                 continue
             }
@@ -430,7 +424,15 @@ private struct TranscriptLessonHistoryView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                if let error = workflow.snapshot.errorMessage {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundColor(AppTheme.destructive)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(AppTheme.editField)
+                }
+
                 if workflow.snapshot.history.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "books.vertical")

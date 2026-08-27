@@ -225,7 +225,7 @@ final class TranscriptLessonWorkflow: ObservableObject {
                   !secondary.contains(item.primaryCategory) else {
                 throw TranscriptLessonWorkflowError.invalidCategoryTags(item.expression)
             }
-            guard transcript.substring(characterStart: item.spanStart, characterEnd: item.spanEnd) == item.expression else {
+            guard transcript.substring(utf16Start: item.spanStart, utf16End: item.spanEnd) == item.expression else {
                 throw TranscriptLessonWorkflowError.invalidTranscriptSpan(item.expression)
             }
         }
@@ -261,11 +261,13 @@ final class TranscriptLessonWorkflow: ObservableObject {
     }
 }
 
-extension String {
-    func substring(characterStart: Int, characterEnd: Int) -> String? {
-        guard characterStart >= 0, characterEnd >= characterStart,
-              let start = index(startIndex, offsetBy: characterStart, limitedBy: endIndex),
-              let end = index(startIndex, offsetBy: characterEnd, limitedBy: endIndex) else {
+private extension String {
+    func substring(utf16Start: Int, utf16End: Int) -> String? {
+        guard utf16Start >= 0, utf16End >= utf16Start,
+              let startOffset = utf16.index(utf16.startIndex, offsetBy: utf16Start, limitedBy: utf16.endIndex),
+              let endOffset = utf16.index(utf16.startIndex, offsetBy: utf16End, limitedBy: utf16.endIndex),
+              let start = String.Index(startOffset, within: self),
+              let end = String.Index(endOffset, within: self) else {
             return nil
         }
         return String(self[start..<end])

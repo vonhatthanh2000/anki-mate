@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS transcript_language_items (
     UNIQUE (lesson_id, span_start, span_end)
 );
 
+COMMENT ON COLUMN transcript_language_items.span_start IS 'Inclusive UTF-16 code-unit offset in approved_transcript';
+COMMENT ON COLUMN transcript_language_items.span_end IS 'Exclusive UTF-16 code-unit offset in approved_transcript';
+
 CREATE TABLE IF NOT EXISTS transcript_exercises (
     id BIGSERIAL PRIMARY KEY,
     lesson_id BIGINT NOT NULL REFERENCES transcript_lessons(id) ON DELETE CASCADE,

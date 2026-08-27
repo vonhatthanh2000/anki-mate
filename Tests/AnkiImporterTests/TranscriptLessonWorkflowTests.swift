@@ -1,8 +1,10 @@
-import XCTest
+import Testing
 @testable import AnkiImporter
 
 @MainActor
-final class TranscriptLessonWorkflowTests: XCTestCase {
+@Suite
+struct TranscriptLessonWorkflowTests {
+    @Test
     func testAnalysisWaitsForExplicitActionAndSavesApprovedTranscript() async throws {
         let fixture = LessonFixtures.analysis()
         let analyzer = AnalyzerFake(analysis: fixture)
@@ -11,18 +13,22 @@ final class TranscriptLessonWorkflowTests: XCTestCase {
 
         workflow.updateTranscript(LessonFixtures.transcript)
 
-        XCTAssertEqual(analyzer.analyzeCalls, [])
-        XCTAssertEqual(workflow.snapshot.phase, .reviewing)
+        #expect(analyzer.analyzeCalls == [])
+        #expect(workflow.snapshot.phase == .reviewing)
 
         await workflow.analyze()
 
-        XCTAssertEqual(analyzer.analyzeCalls, [LessonFixtures.transcript])
-        XCTAssertEqual(store.savedLessons.first?.approvedTranscript, LessonFixtures.transcript)
-        XCTAssertEqual(workflow.snapshot.phase, .ready)
-        XCTAssertEqual(workflow.snapshot.lesson?.id, 42)
-        XCTAssertEqual(workflow.snapshot.lesson?.items.count, 6)
+        #expect(analyzer.analyzeCalls == [LessonFixtures.transcript])
+        #expect(store.savedLessons.first?.approvedTranscript == LessonFixtures.transcript)
+        #expect(workflow.snapshot.phase == .ready)
+        #expect(workflow.snapshot.lesson?.id == 42)
+        #expect(workflow.snapshot.lesson?.items.count == 6)
+        #expect(store.savedLessons.first?.overview == fixture.overview)
+        #expect(store.savedLessons.first?.items == fixture.items)
+        #expect(store.savedLessons.first?.exercises == fixture.exercises)
     }
 
+    @Test
     func testAnalysisRejectsAnItemThatDoesNotResolveToTheApprovedTranscript() async {
         var items = LessonFixtures.analysis().items
         let invalid = items[0]
@@ -55,11 +61,54 @@ final class TranscriptLessonWorkflowTests: XCTestCase {
 
         await workflow.analyze()
 
-        XCTAssertEqual(workflow.snapshot.phase, .failed)
-        XCTAssertTrue(store.savedLessons.isEmpty)
-        XCTAssertTrue(workflow.snapshot.errorMessage?.contains("approved transcript") == true)
+        #expect(workflow.snapshot.phase == .failed)
+        #expect(store.savedLessons.isEmpty)
+        #expect(workflow.snapshot.errorMessage?.contains("approved transcript") == true)
     }
 
+    @Test
+    func testAnalysisAcceptsUtf16SpansAfterEmoji() async {
+        let prefix = "🔬 "
+        let transcript = prefix + LessonFixtures.transcript
+        let base = LessonFixtures.analysis()
+        let offset = prefix.utf16.count
+        let shiftedItems = base.items.map { item in
+            TranscriptLanguageItem(
+                id: item.id,
+                expression: item.expression,
+                spanStart: item.spanStart + offset,
+                spanEnd: item.spanEnd + offset,
+                sourceExcerpt: item.sourceExcerpt,
+                primaryCategory: item.primaryCategory,
+                secondaryCategories: item.secondaryCategories,
+                meaningAndUsage: item.meaningAndUsage,
+                cefrEstimate: item.cefrEstimate,
+                selectionRationale: item.selectionRationale,
+                naturalExample: item.naturalExample,
+                vietnameseGloss: item.vietnameseGloss,
+                practicePriority: item.practicePriority
+            )
+        }
+        let store = StoreFake()
+        let workflow = TranscriptLessonWorkflow(
+            analyzer: AnalyzerFake(
+                analysis: TranscriptLessonAnalysis(
+                    overview: base.overview,
+                    items: shiftedItems,
+                    exercises: base.exercises
+                )
+            ),
+            store: store
+        )
+        workflow.updateTranscript(transcript)
+
+        await workflow.analyze()
+
+        #expect(workflow.snapshot.phase == .ready)
+        #expect(store.savedLessons.first?.approvedTranscript == transcript)
+    }
+
+    @Test
     func testAnalysisRejectsTooFewOrDuplicateItems() async {
         let base = LessonFixtures.analysis()
         let store = StoreFake()
@@ -77,8 +126,8 @@ final class TranscriptLessonWorkflowTests: XCTestCase {
 
         await tooFew.analyze()
 
-        XCTAssertTrue(tooFew.snapshot.errorMessage?.contains("6–10") == true)
-        XCTAssertTrue(store.savedLessons.isEmpty)
+        #expect(tooFew.snapshot.errorMessage?.contains("6–10") == true)
+        #expect(store.savedLessons.isEmpty)
 
         let duplicate = TranscriptLessonWorkflow(
             analyzer: AnalyzerFake(
@@ -94,10 +143,11 @@ final class TranscriptLessonWorkflowTests: XCTestCase {
 
         await duplicate.analyze()
 
-        XCTAssertTrue(duplicate.snapshot.errorMessage?.contains("same language item") == true)
-        XCTAssertTrue(store.savedLessons.isEmpty)
+        #expect(duplicate.snapshot.errorMessage?.contains("same language item") == true)
+        #expect(store.savedLessons.isEmpty)
     }
 
+    @Test
     func testAnalysisRejectsConflictingCategoriesAndPracticePriorities() async {
         let base = LessonFixtures.analysis()
         let first = base.items[0]
@@ -120,7 +170,7 @@ final class TranscriptLessonWorkflowTests: XCTestCase {
 
         await categoryWorkflow.analyze()
 
-        XCTAssertTrue(categoryWorkflow.snapshot.errorMessage?.contains("category tags") == true)
+        #expect(categoryWorkflow.snapshot.errorMessage?.contains("category tags") == true)
 
         var invalidPriorities = base.items
         invalidPriorities[0] = LessonFixtures.copy(first, practicePriority: 2)
@@ -138,9 +188,10 @@ final class TranscriptLessonWorkflowTests: XCTestCase {
 
         await practiceWorkflow.analyze()
 
-        XCTAssertTrue(practiceWorkflow.snapshot.errorMessage?.contains("recognition and production") == true)
+        #expect(practiceWorkflow.snapshot.errorMessage?.contains("recognition and production") == true)
     }
 
+    @Test
     func testHistoryCanBeLoadedAndACompleteLessonReopened() async throws {
         let analyzer = AnalyzerFake(analysis: LessonFixtures.analysis())
         let store = StoreFake()
@@ -167,15 +218,16 @@ final class TranscriptLessonWorkflowTests: XCTestCase {
         let workflow = TranscriptLessonWorkflow(analyzer: analyzer, store: store)
 
         await workflow.loadHistory()
-        XCTAssertEqual(workflow.snapshot.history.map(\.id), [42])
+        #expect(workflow.snapshot.history.map(\.id) == [42])
 
         await workflow.openLesson(id: 42)
-        XCTAssertEqual(workflow.snapshot.phase, .ready)
-        XCTAssertEqual(workflow.snapshot.lesson, saved)
-        XCTAssertEqual(workflow.snapshot.transcript, LessonFixtures.transcript)
-        XCTAssertEqual(workflow.snapshot.lesson?.attempts.first?.answer, "A saved answer")
+        #expect(workflow.snapshot.phase == .ready)
+        #expect(workflow.snapshot.lesson == saved)
+        #expect(workflow.snapshot.transcript == LessonFixtures.transcript)
+        #expect(workflow.snapshot.lesson?.attempts.first?.answer == "A saved answer")
     }
 
+    @Test
     func testProductionAnswerReceivesAndPersistsNaturalnessFeedback() async throws {
         let analyzer = AnalyzerFake(analysis: LessonFixtures.analysis())
         let store = StoreFake()
@@ -188,13 +240,29 @@ final class TranscriptLessonWorkflowTests: XCTestCase {
             answer: "I had to take the broader context into account."
         )
 
-        XCTAssertEqual(analyzer.evaluationRequests.count, 1)
-        XCTAssertEqual(store.savedAttempts.count, 1)
-        XCTAssertEqual(workflow.snapshot.lesson?.attempts.count, 1)
-        XCTAssertEqual(
-            workflow.snapshot.lesson?.attempts.first?.feedback.naturalRevision,
-            AnalyzerFake.feedback.naturalRevision
+        #expect(analyzer.evaluationRequests.count == 1)
+        #expect(store.savedAttempts.count == 1)
+        #expect(workflow.snapshot.lesson?.attempts.count == 1)
+        #expect(workflow.snapshot.lesson?.attempts.first?.feedback.naturalRevision == AnalyzerFake.feedback.naturalRevision)
+        #expect(workflow.snapshot.lesson?.attempts.first?.feedback == AnalyzerFake.feedback)
+    }
+
+    @Test
+    func testRecognitionAnswerIsEvaluatedAndPersisted() async {
+        let analyzer = AnalyzerFake(analysis: LessonFixtures.analysis())
+        let store = StoreFake()
+        store.lessonsByID[42] = store.makeSavedLesson()
+        let workflow = TranscriptLessonWorkflow(analyzer: analyzer, store: store)
+        await workflow.openLesson(id: 42)
+
+        await workflow.submitAnswer(
+            exerciseID: "item-1-recognition",
+            answer: "It introduces a contrast despite limited evidence."
         )
+
+        #expect(analyzer.evaluationRequests.first?.exercise.kind == .recognition)
+        #expect(store.savedAttempts.first?.exerciseID == "item-1-recognition")
+        #expect(store.savedAttempts.first?.feedback.meaningFeedback == AnalyzerFake.feedback.meaningFeedback)
     }
 }
 
@@ -250,7 +318,10 @@ private final class StoreFake: TranscriptLessonStoring {
     }
 
     func loadLesson(id: Int64) async throws -> TranscriptLesson {
-        try XCTUnwrap(lessonsByID[id])
+        guard let lesson = lessonsByID[id] else {
+            throw StoreFakeError.lessonNotFound
+        }
+        return lesson
     }
 
     func saveAttempt(_ attempt: ExerciseAttempt, lessonID: Int64) async throws -> ExerciseAttempt {
@@ -276,6 +347,10 @@ private final class StoreFake: TranscriptLessonStoring {
     }
 }
 
+private enum StoreFakeError: Error {
+    case lessonNotFound
+}
+
 private enum LessonFixtures {
     static let transcript = "Although the evidence was limited, Maya took the broader context into account, ruled out a quick fix, followed through on the experiment, came across an unexpected pattern, and ended up changing course."
 
@@ -290,8 +365,8 @@ private enum LessonFixtures {
         ]
         let items = expressions.enumerated().map { index, entry in
             let range = transcript.range(of: entry.0)!
-            let start = transcript.distance(from: transcript.startIndex, to: range.lowerBound)
-            let end = transcript.distance(from: transcript.startIndex, to: range.upperBound)
+            let start = range.lowerBound.utf16Offset(in: transcript)
+            let end = range.upperBound.utf16Offset(in: transcript)
             return TranscriptLanguageItem(
                 id: "item-\(index + 1)",
                 expression: entry.0,

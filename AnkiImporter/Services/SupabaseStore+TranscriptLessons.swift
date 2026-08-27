@@ -14,8 +14,8 @@ extension SupabaseStore: TranscriptLessonStoring {
             itemCount: lesson.items.count
         )
         let insertedData = try await transcriptRequest(
-            table: "transcript_lessons",
-            method: "POST",
+            table: .lessons,
+            method: .post,
             body: try JSONEncoder().encode(lessonRow),
             prefer: "return=representation"
         )
@@ -27,16 +27,16 @@ extension SupabaseStore: TranscriptLessonStoring {
             if !lesson.items.isEmpty {
                 let itemRows = lesson.items.map { ItemRow(lessonID: inserted.id, item: $0) }
                 _ = try await transcriptRequest(
-                    table: "transcript_language_items",
-                    method: "POST",
+                    table: .items,
+                    method: .post,
                     body: try JSONEncoder().encode(itemRows)
                 )
             }
             if !lesson.exercises.isEmpty {
                 let exerciseRows = lesson.exercises.map { ExerciseRow(lessonID: inserted.id, exercise: $0) }
                 _ = try await transcriptRequest(
-                    table: "transcript_exercises",
-                    method: "POST",
+                    table: .exercises,
+                    method: .post,
                     body: try JSONEncoder().encode(exerciseRows)
                 )
             }
@@ -53,7 +53,7 @@ extension SupabaseStore: TranscriptLessonStoring {
 
     func loadLessonSummaries() async throws -> [TranscriptLessonSummary] {
         let data = try await transcriptRequest(
-            table: "transcript_lessons",
+            table: .lessons,
             queryItems: [
                 URLQueryItem(name: "select", value: "id,created_at,source_url,main_point,item_count"),
                 URLQueryItem(name: "order", value: "created_at.desc")
@@ -72,7 +72,7 @@ extension SupabaseStore: TranscriptLessonStoring {
 
     func loadLesson(id: Int64) async throws -> TranscriptLesson {
         let lessonPayload = try await transcriptRequest(
-            table: "transcript_lessons",
+            table: .lessons,
             queryItems: [
                 URLQueryItem(name: "select", value: "*"),
                 URLQueryItem(name: "id", value: "eq.\(id)"),
@@ -80,7 +80,7 @@ extension SupabaseStore: TranscriptLessonStoring {
             ]
         )
         let itemPayload = try await transcriptRequest(
-            table: "transcript_language_items",
+            table: .items,
             queryItems: [
                 URLQueryItem(name: "select", value: "*"),
                 URLQueryItem(name: "lesson_id", value: "eq.\(id)"),
@@ -88,7 +88,7 @@ extension SupabaseStore: TranscriptLessonStoring {
             ]
         )
         let exercisePayload = try await transcriptRequest(
-            table: "transcript_exercises",
+            table: .exercises,
             queryItems: [
                 URLQueryItem(name: "select", value: "*"),
                 URLQueryItem(name: "lesson_id", value: "eq.\(id)"),
@@ -96,7 +96,7 @@ extension SupabaseStore: TranscriptLessonStoring {
             ]
         )
         let attemptPayload = try await transcriptRequest(
-            table: "transcript_exercise_attempts",
+            table: .attempts,
             queryItems: [
                 URLQueryItem(name: "select", value: "*"),
                 URLQueryItem(name: "lesson_id", value: "eq.\(id)"),
@@ -132,8 +132,8 @@ extension SupabaseStore: TranscriptLessonStoring {
     func saveAttempt(_ attempt: ExerciseAttempt, lessonID: Int64) async throws -> ExerciseAttempt {
         let row = AttemptInsertRow(lessonID: lessonID, attempt: attempt)
         let data = try await transcriptRequest(
-            table: "transcript_exercise_attempts",
-            method: "POST",
+            table: .attempts,
+            method: .post,
             body: try JSONEncoder().encode(row),
             prefer: "return=representation"
         )
@@ -144,14 +144,14 @@ extension SupabaseStore: TranscriptLessonStoring {
     }
 
     private func transcriptRequest(
-        table: String,
-        method: String = "GET",
+        table: TranscriptTable,
+        method: TranscriptHTTPMethod = .get,
         queryItems: [URLQueryItem] = [],
         body: Data? = nil,
         prefer: String? = nil
     ) async throws -> Data {
         var components = URLComponents(
-            url: url.appendingPathComponent("rest/v1/\(table)"),
+            url: url.appendingPathComponent("rest/v1/\(table.rawValue)"),
             resolvingAgainstBaseURL: true
         )
         components?.queryItems = queryItems.isEmpty ? nil : queryItems
@@ -160,7 +160,7 @@ extension SupabaseStore: TranscriptLessonStoring {
         }
 
         var request = URLRequest(url: endpoint)
-        request.httpMethod = method
+        request.httpMethod = method.rawValue
         request.httpBody = body
         applySupabaseAuth(to: &request)
         if body != nil {
@@ -182,11 +182,24 @@ extension SupabaseStore: TranscriptLessonStoring {
 
     private func deleteTranscriptLesson(id: Int64) async throws {
         _ = try await transcriptRequest(
-            table: "transcript_lessons",
-            method: "DELETE",
+            table: .lessons,
+            method: .delete,
             queryItems: [URLQueryItem(name: "id", value: "eq.\(id)")]
         )
     }
+}
+
+private enum TranscriptTable: String {
+    case lessons = "transcript_lessons"
+    case items = "transcript_language_items"
+    case exercises = "transcript_exercises"
+    case attempts = "transcript_exercise_attempts"
+}
+
+private enum TranscriptHTTPMethod: String {
+    case get = "GET"
+    case post = "POST"
+    case delete = "DELETE"
 }
 
 private struct LessonInsertRow: Encodable {

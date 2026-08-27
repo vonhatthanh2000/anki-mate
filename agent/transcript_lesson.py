@@ -116,6 +116,12 @@ def _find_expression(
     return match.start(), match.end()
 
 
+def _utf16_offset(text: str, codepoint_offset: int) -> int:
+    """Return the NSString/Swift-compatible UTF-16 offset for a Python index."""
+
+    return len(text[:codepoint_offset].encode("utf-16-le")) // 2
+
+
 def _source_excerpt(transcript: str, start: int, end: int) -> str:
     left_candidates = [transcript.rfind(mark, 0, start) for mark in ".!?\n"]
     left = max(left_candidates) + 1
@@ -148,8 +154,8 @@ def normalize_analysis(analysis: LessonAnalysis, transcript: str) -> LessonAnaly
                 update={
                     "id": new_id,
                     "expression": exact_expression,
-                    "spanStart": start,
-                    "spanEnd": end,
+                    "spanStart": _utf16_offset(transcript, start),
+                    "spanEnd": _utf16_offset(transcript, end),
                     "sourceExcerpt": _source_excerpt(transcript, start, end),
                 }
             )

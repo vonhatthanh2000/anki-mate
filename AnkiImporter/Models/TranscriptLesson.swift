@@ -25,7 +25,9 @@ struct MeaningOverview: Codable, Equatable, Sendable {
 struct TranscriptLanguageItem: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let expression: String
+    /// Inclusive UTF-16 code-unit offset in the approved transcript.
     let spanStart: Int
+    /// Exclusive UTF-16 code-unit offset in the approved transcript.
     let spanEnd: Int
     let sourceExcerpt: String
     let primaryCategory: LanguageCategory
