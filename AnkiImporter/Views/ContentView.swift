@@ -7,6 +7,8 @@ struct ContentView: View {
         Group {
             if selectedFeature == "boost-vocab" {
                 BoostVocabView(selectedFeature: $selectedFeature)
+            } else if selectedFeature == "transcript-lessons" {
+                TranscriptLessonView(selectedFeature: $selectedFeature)
             } else {
                 HomeView(selectedFeature: $selectedFeature)
             }

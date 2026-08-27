@@ -17,16 +17,16 @@ Status: Approved
 
 **What to build:** Add the Transcript Lessons entry point and the first complete workflow: paste a transcript, review and edit it, explicitly request analysis, receive a concise Meaning Overview, and save the result. Introduce the deep `TranscriptLessonWorkflow` module as the shared interface used by SwiftUI and behavioral tests.
 
-**Status:** ready-for-agent
+**Status:** implemented
 
-- [ ] Transcript Lessons appears alongside BoostVocab without changing BoostVocab behavior.
-- [ ] The learner can paste and edit a primarily English transcript.
-- [ ] Analysis never starts until the learner presses Analyze.
-- [ ] The analyzer returns a concise Meaning Overview containing the summary, main point, supporting ideas, tone, register, and only necessary context.
-- [ ] Unsupported claims are attributed to the speaker rather than presented as verified facts.
-- [ ] The approved transcript and Meaning Overview are saved to Supabase.
-- [ ] Acquisition, review, analysis, success, and failure are observable workflow states.
-- [ ] A Swift test target exercises the complete behavior through the workflow interface using test adapters.
+- [x] Transcript Lessons appears alongside BoostVocab without changing BoostVocab behavior.
+- [x] The learner can paste and edit a primarily English transcript.
+- [x] Analysis never starts until the learner presses Analyze.
+- [x] The analyzer returns a concise Meaning Overview containing the summary, main point, supporting ideas, tone, register, and only necessary context.
+- [x] Unsupported claims are attributed to the speaker rather than presented as verified facts.
+- [x] The approved transcript and Meaning Overview are saved to Supabase.
+- [x] Acquisition, review, analysis, success, and failure are observable workflow states.
+- [x] A Swift test target exercises the complete behavior through the workflow interface using test adapters.
 
 ## T2: Analyze and highlight high-value language
 
@@ -34,18 +34,18 @@ Status: Approved
 
 **What to build:** Expand an analyzed lesson with a focused set of high-value language items connected to exact spans in the approved transcript. Show the transcript with inline highlights and navigate from each highlight to its explanation.
 
-**Status:** ready-for-agent
+**Status:** implemented
 
-- [ ] A lesson contains 6–10 unique high-value items across Vocabulary, Idiom, Phrasal verb, Collocation, Slang, and Grammar pattern.
-- [ ] Categories may remain empty; the analyzer does not create weak items to fill quotas.
-- [ ] Each item has exactly one primary category and optional secondary category tags.
-- [ ] Each item includes meaning and usage, source excerpt, estimated CEFR level, selection rationale, and a new natural example.
-- [ ] B2–C2 items are prioritized while subtle or essential lower-level usage may be included with justification.
-- [ ] Short Vietnamese support appears only for difficult sentence-level analysis.
-- [ ] Every item resolves to a stable span in the approved transcript.
-- [ ] Selected language is highlighted inline and linked to its detailed analysis.
-- [ ] Language items and their analysis are saved with the lesson.
-- [ ] Workflow tests verify item limits, uniqueness, classification, span resolution, and persisted output.
+- [x] A lesson contains 6–10 unique high-value items across Vocabulary, Idiom, Phrasal verb, Collocation, Slang, and Grammar pattern.
+- [x] Categories may remain empty; the analyzer does not create weak items to fill quotas.
+- [x] Each item has exactly one primary category and optional secondary category tags.
+- [x] Each item includes meaning and usage, source excerpt, estimated CEFR level, selection rationale, and a new natural example.
+- [x] B2–C2 items are prioritized while subtle or essential lower-level usage may be included with justification.
+- [x] Short Vietnamese support appears only for difficult sentence-level analysis.
+- [x] Every item resolves to a stable span in the approved transcript.
+- [x] Selected language is highlighted inline and linked to its detailed analysis.
+- [x] Language items and their analysis are saved with the lesson.
+- [x] Workflow tests verify item limits, uniqueness, classification, span resolution, and persisted output.
 
 ## T3: Browse and resume saved Transcript Lessons
 
@@ -53,14 +53,14 @@ Status: Approved
 
 **What to build:** Add a saved Transcript Lessons experience where the learner can browse previous lessons and reopen one with its approved transcript, Meaning Overview, selected language, and progress intact.
 
-**Status:** ready-for-agent
+**Status:** implemented
 
-- [ ] Saved Transcript Lessons are browsable separately from BoostVocab batches.
-- [ ] Reopening a lesson restores source metadata, the approved transcript, Meaning Overview, and language items.
-- [ ] The complete transcript-to-item highlighting relationship survives persistence and reload.
-- [ ] Saved lesson loading and database errors are presented clearly.
-- [ ] Source media and extracted audio are never included in persisted lesson state.
-- [ ] Workflow tests verify saving, listing, reopening, and reconstruction of a complete lesson.
+- [x] Saved Transcript Lessons are browsable separately from BoostVocab batches.
+- [x] Reopening a lesson restores source metadata, the approved transcript, Meaning Overview, and language items.
+- [x] The complete transcript-to-item highlighting relationship survives persistence and reload.
+- [x] Saved lesson loading and database errors are presented clearly.
+- [x] Source media and extracted audio are never included in persisted lesson state.
+- [x] Workflow tests verify saving, listing, reopening, and reconstruction of a complete lesson.
 
 ## T4: Practice reusable language with AI feedback
 
@@ -68,16 +68,16 @@ Status: Approved
 
 **What to build:** Give the 3–5 strongest reusable language items both contextual recognition and typed production practice. Save attempts and return concise feedback that helps the learner use the language naturally.
 
-**Status:** ready-for-agent
+**Status:** implemented
 
-- [ ] Exactly 3–5 high-priority items receive active practice.
-- [ ] Each practiced item includes a contextual recognition exercise.
-- [ ] Each practiced item includes a typed paraphrase or original-example task.
-- [ ] Production feedback covers meaning, correctness, contextual appropriateness, and naturalness.
-- [ ] Feedback includes a concise explanation and a natural suggested revision rather than only a score.
-- [ ] Attempts and feedback are saved and restored when the lesson is reopened.
-- [ ] No microphone, recording, pronunciation, or spoken-response behavior is introduced.
-- [ ] Workflow tests verify exercise selection, evaluation results, persistence, and resume behavior.
+- [x] Exactly 3–5 high-priority items receive active practice.
+- [x] Each practiced item includes a contextual recognition exercise.
+- [x] Each practiced item includes a typed paraphrase or original-example task.
+- [x] Production feedback covers meaning, correctness, contextual appropriateness, and naturalness.
+- [x] Feedback includes a concise explanation and a natural suggested revision rather than only a score.
+- [x] Attempts and feedback are saved and restored when the lesson is reopened.
+- [x] No microphone, recording, pronunciation, or spoken-response behavior is introduced.
+- [x] Workflow tests verify exercise selection, evaluation results, persistence, and resume behavior.
 
 ## T5: Export Natural English notes to Anki
 
@@ -160,4 +160,3 @@ Status: Approved
 - [ ] Packaged dependencies and credential loading work without exposing secrets.
 - [ ] Existing BoostVocab creation, saved batches, enrichment, and Anki export continue to work.
 - [ ] Automated tests pass and the packaged manual smoke test is documented.
-

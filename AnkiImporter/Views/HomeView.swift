@@ -8,6 +8,11 @@ struct HomeView: View {
             id: "boost-vocab",
             name: "BoostVocab",
             imageURL: "https://images.unsplash.com/photo-1588912914017-923900a34710?w=800"
+        ),
+        Feature(
+            id: "transcript-lessons",
+            name: "Transcript Lessons",
+            imageURL: "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800"
         )
     ]
 
@@ -37,14 +42,17 @@ struct HomeView: View {
                 )
 
                 HStack {
-                    LazyVGrid(columns: [GridItem(.flexible(minimum: 300, maximum: 400))], spacing: 32) {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 300, maximum: 400))],
+                        spacing: 32
+                    ) {
                         ForEach(features) { feature in
                             FeatureCard(feature: feature) {
                                 selectedFeature = feature.id
                             }
                         }
                     }
-                    .frame(maxWidth: 400)
+                    .frame(maxWidth: 832)
                     Spacer()
                 }
                 .padding(.horizontal, 32)

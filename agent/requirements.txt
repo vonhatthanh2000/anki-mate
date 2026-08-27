@@ -1,3 +1,4 @@
 phidata
 openai
+pydantic
 python-dotenv

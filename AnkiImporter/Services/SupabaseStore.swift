@@ -25,8 +25,8 @@ enum DateFilter: String, CaseIterable {
 final class SupabaseStore {
     static let shared = SupabaseStore()
 
-    private let url: URL
-    private let apiKey: String
+    let url: URL
+    let apiKey: String
 
     private init() {
         // Load credentials from .env file or environment variables
@@ -93,7 +93,7 @@ final class SupabaseStore {
     }
 
     /// Supabase PostgREST expects both `apikey` and `Authorization: Bearer <same key>` for the anon (or service) key.
-    private func applySupabaseAuth(to request: inout URLRequest) {
+    func applySupabaseAuth(to request: inout URLRequest) {
         request.setValue(apiKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     }
@@ -105,7 +105,7 @@ final class SupabaseStore {
         return nil
     }
 
-    private static func describeRestFailure(status: Int, body: Data) -> String {
+    static func describeRestFailure(status: Int, body: Data) -> String {
         let snippet = String(data: body, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .prefix(400)

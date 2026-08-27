@@ -17,6 +17,11 @@ let package = Package(
             name: "AnkiImporter",
             path: "AnkiImporter",
             exclude: ["Info.plist"]
+        ),
+        .testTarget(
+            name: "AnkiImporterTests",
+            dependencies: ["AnkiImporter"],
+            path: "Tests/AnkiImporterTests"
         )
     ]
 )

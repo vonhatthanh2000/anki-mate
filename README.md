@@ -11,6 +11,7 @@
 - 🔍 **Smart Preview**: Highlight vocabulary words in context
 - 📤 **Direct Anki Import**: Send cards directly to Anki with one click
 - ☁️ **Cloud Database**: All data stored in Supabase for easy management and syncing
+- 🎧 **Transcript Lessons**: Turn an approved English transcript into a saved meaning overview, highlighted B2+ language, and typed practice with concise AI feedback
 
 ## Requirements
 
@@ -64,6 +65,8 @@ Add your key to `agent/.env`:
 
 ```
 OPENAI_API_KEY=sk-your-key-here
+# Optional; defaults to gpt-4o-mini
+TRANSCRIPT_LESSON_MODEL=gpt-4o-mini
 ```
 
 **Note**: You can also put all credentials in the root `.env` file:
@@ -97,12 +100,14 @@ AnkiImporter/
 ├── Persistence/                   # (Empty - now using Supabase)
 ├── Services/                      # Business logic
 │   ├── SupabaseStore.swift        # Supabase cloud database
+│   ├── TranscriptLessonWorkflow.swift # Transcript lesson use cases and state
 │   ├── AnkiConnectClient.swift    # AnkiConnect integration
 │   └── VocabAgentClient.swift     # OpenAI agent integration
 ├── Models/
 │   ├── SavedBatch.swift
 │   ├── BatchWordInput.swift
 │   ├── AppTheme.swift
+│   ├── TranscriptLesson.swift
 │   ├── WordPair.swift
 │   ├── TopicRecord.swift
 │   └── Feature.swift
@@ -111,12 +116,15 @@ AnkiImporter/
 │   ├── HomeView.swift
 │   ├── SavedBatchesWindow.swift
 │   ├── HighlightedParagraph.swift
+│   ├── TranscriptLessonView.swift
 │   └── BoostVocabView.swift
 └── Info.plist
 
 agent/                             # Python AI agent (bundled)
 ├── anki_vocab_suggest.py
 ├── vocab_cli.py                   # CLI wrapper for Swift
+├── transcript_lesson.py           # Structured transcript analysis and feedback
+├── transcript_lesson_cli.py       # JSON-over-stdin bridge for Swift
 ├── requirements.txt
 ├── .venv/                         # Python dependencies
 └── .env                           # API key (not in repo)
@@ -126,7 +134,8 @@ supabase/                          # Database migrations
 └── migrations/
     ├── 20260422120000_initial_schema.sql
     ├── 20260423120000_add_topic_to_words.sql
-    └── 20260423130000_drop_legacy_public_schema_migrations.sql
+    ├── 20260423130000_drop_legacy_public_schema_migrations.sql
+    └── 20260827120000_add_transcript_lessons.sql
 
 supabase_schema.sql                # Database schema for Supabase (legacy)
 ```
@@ -135,7 +144,7 @@ supabase_schema.sql                # Database schema for Supabase (legacy)
 
 Data is now stored in **Supabase** (PostgreSQL cloud database) instead of local SQLite:
 
-- **Tables**: `batches`, `words`, `paragraphs`, `topics` (words reference `topics.id` via `topic_id`)
+- **Tables**: BoostVocab uses `batches`, `words`, `paragraphs`, and `topics`; Transcript Lessons uses normalized lesson, language-item, exercise, and attempt tables
 - **Relationships**: Words and paragraphs reference batches via foreign keys
 - **Date Filtering**: Server-side filtering for "This Week" and "This Month" views
 - **Migrations**: SQL files in `supabase/migrations/`; applied history lives in `supabase_migrations.schema_migrations` when you use the Supabase CLI or Dashboard migrations
