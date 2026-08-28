@@ -235,8 +235,8 @@ final class TranscriptLessonWorkflow: ObservableObject {
     }
 
     func analyze() async {
-        let approvedTranscript = snapshot.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !approvedTranscript.isEmpty else {
+        let approvedTranscript = snapshot.transcript
+        guard !approvedTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             fail(with: TranscriptLessonWorkflowError.transcriptRequired, stage: .analysis)
             return
         }

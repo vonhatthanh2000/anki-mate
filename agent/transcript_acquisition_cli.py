@@ -137,46 +137,73 @@ def _caption_text(payload: str, extension: str) -> str:
     if extension == "json3":
         try:
             document = json.loads(payload)
-            chunks = []
+            cues = []
             for event in document.get("events", []):
                 text = "".join(segment.get("utf8", "") for segment in event.get("segs", []))
                 if text.strip():
-                    chunks.append(text.strip())
-            return _normalize_caption_lines(chunks)
+                    cues.append(text.strip())
+            return _format_transcript_for_review(cues)
         except (TypeError, ValueError):
             return ""
 
-    lines: list[str] = []
+    cues: list[str] = []
+    cue_lines: list[str] = []
     for line in payload.splitlines():
         stripped = line.strip()
+        if not stripped or "-->" in stripped:
+            if cue_lines:
+                cues.append(" ".join(cue_lines))
+                cue_lines = []
+            continue
         if (
-            not stripped
-            or stripped == "WEBVTT"
-            or "-->" in stripped
+            stripped == "WEBVTT"
             or stripped.isdigit()
             or stripped.startswith(("Kind:", "Language:", "NOTE"))
         ):
             continue
         cleaned = re.sub(r"<[^>]+>", "", html.unescape(stripped))
         if cleaned:
-            lines.append(cleaned)
-    return _normalize_caption_lines(lines)
+            cue_lines.append(cleaned)
+    if cue_lines:
+        cues.append(" ".join(cue_lines))
+    return _format_transcript_for_review(cues)
 
 
-def _normalize_caption_lines(lines: list[str]) -> str:
-    merged_words: list[str] = []
-    for line in lines:
-        normalized = re.sub(r"\s+", " ", line).strip()
+def _format_transcript_for_review(cues: list[str]) -> str:
+    """Format URL-derived text without changing its words or their order."""
+    merged_cues: list[list[str]] = []
+    for cue in cues:
+        normalized = re.sub(r"\s+", " ", cue).strip()
         if not normalized:
             continue
         words = normalized.split(" ")
         overlap = 0
-        for count in range(min(len(merged_words), len(words)), 0, -1):
-            if merged_words[-count:] == words[:count]:
-                overlap = count
-                break
-        merged_words.extend(words[overlap:])
-    return " ".join(merged_words).strip()
+        if merged_cues:
+            merged_words = merged_cues[-1]
+            for count in range(min(len(merged_words), len(words)), 0, -1):
+                if merged_words[-count:] == words[:count]:
+                    overlap = count
+                    break
+        if overlap:
+            merged_cues[-1].extend(words[overlap:])
+        else:
+            merged_cues.append(words)
+
+    all_words = [word for cue in merged_cues for word in cue]
+    sentence_end = re.compile(r"[.!?…]+[\"'’”\)\]]*$")
+    if any(sentence_end.search(word) for word in all_words):
+        units: list[str] = []
+        current: list[str] = []
+        for word in all_words:
+            current.append(word)
+            if sentence_end.search(word):
+                units.append(" ".join(current))
+                current = []
+        if current:
+            units.append(" ".join(current))
+        return "\n".join(units)
+
+    return "\n".join(" ".join(cue) for cue in merged_cues)
 
 
 def _download_audio(youtube_dl: Any, url: str, job_directory: Path) -> Path:
@@ -366,7 +393,7 @@ def transcribe_url(command: dict[str, Any], youtube_dl: Any, openai_type: Any) -
         audio_path = _extract_audio(media_path, job_directory)
         transcript, language = _transcribe(openai_type, audio_path)
         return {
-            "transcript": transcript,
+            "transcript": _format_transcript_for_review([transcript]),
             "source": _source_payload(source, info, language),
             "method": "speech_to_text",
             "detectedLanguage": language,

@@ -58,8 +58,9 @@ struct TranscriptLessonView: View {
                 workflow.reset()
                 selectedFeature = nil
             } label: {
-                Label("Back", systemImage: "chevron.left")
+                Text("← Back to Home")
             }
+            .buttonStyle(TranscriptLessonButtonStyle())
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Transcript Lessons")
@@ -82,6 +83,7 @@ struct TranscriptLessonView: View {
             } label: {
                 Label("Saved lessons", systemImage: "books.vertical")
             }
+            .buttonStyle(TranscriptLessonButtonStyle(fill: AppTheme.card))
 
             Button {
                 acquisitionTask?.cancel()
@@ -89,10 +91,14 @@ struct TranscriptLessonView: View {
             } label: {
                 Label("New lesson", systemImage: "plus")
             }
+            .buttonStyle(TranscriptLessonButtonStyle())
         }
-        .buttonStyle(.bordered)
-        .padding(20)
-        .background(AppTheme.card.opacity(0.72))
+        .padding(24)
+        .background(AppTheme.card)
+        .overlay(
+            Rectangle().stroke(AppTheme.primary, lineWidth: 4),
+            alignment: .bottom
+        )
     }
 
     @ViewBuilder
@@ -124,18 +130,22 @@ struct TranscriptLessonView: View {
                             set: { workflow.updateSourceURL($0) }
                         )
                     )
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(AppTheme.inputFont(size: 16))
+                    .foregroundStyle(AppTheme.text)
+                    .padding(10)
+                    .background(AppTheme.editField)
+                    .overlay(Rectangle().stroke(AppTheme.primary, lineWidth: 2))
                     Button("Get transcript") {
                         acquisitionTask = Task {
                             await workflow.acquireFromSourceURL()
                             acquisitionTask = nil
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(AppTheme.primary)
+                    .buttonStyle(TranscriptLessonButtonStyle())
                     .disabled(workflow.snapshot.sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     Button("Choose local file…") { isShowingFileImporter = true }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(TranscriptLessonButtonStyle(fill: AppTheme.card))
                 }
 
                 if let warning = workflow.snapshot.durationWarning {
@@ -160,6 +170,7 @@ struct TranscriptLessonView: View {
                     )
                 )
                 .font(AppTheme.inputFont(size: 16))
+                .foregroundStyle(AppTheme.text)
                 .scrollContentBackground(.hidden)
                 .padding(12)
                 .frame(minHeight: 360)
@@ -195,11 +206,8 @@ struct TranscriptLessonView: View {
                         Task { await workflow.analyze() }
                     } label: {
                         Label("Analyze transcript", systemImage: "sparkles")
-                            .font(AppTheme.inputFont(size: 16))
-                            .padding(.horizontal, 8)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(AppTheme.primary)
+                    .buttonStyle(TranscriptLessonButtonStyle())
                     .disabled(workflow.snapshot.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -219,7 +227,7 @@ struct TranscriptLessonView: View {
                     .foregroundColor(AppTheme.text)
                 if workflow.snapshot.phase == .acquiring || workflow.snapshot.phase == .transcribing {
                     Button("Cancel") { acquisitionTask?.cancel() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(TranscriptLessonButtonStyle())
                 }
             }
             .padding(28)
@@ -251,7 +259,7 @@ private struct TranscriptLessonResultView: View {
                         Link(destination: url) {
                             Label("Open original source for replay and shadowing", systemImage: "arrow.up.right.square")
                         }
-                        .font(AppTheme.inputFont(size: 15))
+                        .buttonStyle(TranscriptLessonButtonStyle(fill: AppTheme.card))
                     }
                     meaningOverview
                     transcript(proxy: proxy)
@@ -438,8 +446,9 @@ private struct LanguageItemCard: View {
                         item.ankiNoteID == nil ? (isExporting ? "Exporting…" : "Add to Anki") : "Exported to Anki",
                         systemImage: item.ankiNoteID == nil ? "rectangle.stack.badge.plus" : "checkmark.circle.fill"
                     )
+                    .frame(minWidth: 160)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(TranscriptLessonButtonStyle(fill: AppTheme.card))
                 .disabled(isExporting || item.ankiNoteID != nil)
             }
         }
@@ -471,13 +480,19 @@ private struct ExerciseCard: View {
             }
             Text(exercise.prompt)
             TextField("Your answer", text: $answer, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .foregroundStyle(AppTheme.text)
+                .padding(10)
+                .background(AppTheme.editField)
+                .overlay(Rectangle().stroke(AppTheme.primary, lineWidth: 2))
                 .lineLimit(2...5)
             HStack {
                 Spacer()
-                Button(isEvaluating ? "Checking…" : "Check answer", action: submit)
-                    .buttonStyle(.borderedProminent)
-                    .tint(AppTheme.primary)
+                Button(action: submit) {
+                    Text(isEvaluating ? "Checking…" : "Check answer")
+                        .frame(minWidth: 100)
+                }
+                    .buttonStyle(TranscriptLessonButtonStyle())
                     .disabled(isEvaluating || answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if let attempt = latestAttempt {
@@ -570,15 +585,38 @@ private struct TranscriptLessonHistoryView: View {
                             .padding(.vertical, 6)
                         }
                         .buttonStyle(.plain)
+                        .listRowBackground(AppTheme.editField)
                     }
+                    .scrollContentBackground(.hidden)
+                    .background(AppTheme.editField)
+                    .foregroundStyle(AppTheme.text)
                 }
             }
+            .foregroundStyle(AppTheme.text)
+            .background(AppTheme.background)
             .navigationTitle("Saved Transcript Lessons")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { isPresented = false }
+                        .buttonStyle(TranscriptLessonButtonStyle())
                 }
             }
         }
+    }
+}
+
+private struct TranscriptLessonButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    var fill: Color = AppTheme.primary
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(AppTheme.displayFont(size: 15))
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 11)
+            .background(fill)
+            .overlay(Rectangle().stroke(AppTheme.primary, lineWidth: 4))
+            .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.45)
     }
 }

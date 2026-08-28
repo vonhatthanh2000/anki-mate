@@ -56,6 +56,8 @@ The export state and resulting Anki note identifier for one language item. A uni
 
 Tracks the local attempt to obtain captions or media and produce a transcript. It owns temporary paths and cleanup responsibility but is not lesson content.
 
+For URL-derived captions, the acquisition job also produces a readability-formatted transcript for review. It derives one sentence-like unit per line from existing punctuation, caption cues, or timing boundaries without using a generative model or changing the source words. Manual transcript input bypasses this formatting.
+
 ### Temporary media
 
 Downloaded video or extracted audio used during acquisition. It must not be persisted to Supabase and should be deleted after transcription or failure handling.
@@ -73,6 +75,8 @@ Downloaded video or extracted audio used during acquisition. It must not be pers
 
 - A source is primarily English and no longer than five minutes.
 - Analysis cannot begin before transcript approval.
+- URL-derived caption formatting may change whitespace and line breaks only; source words and their order remain unchanged.
+- Manually entered transcript text is not automatically reformatted.
 - Language items reference exact spans in the approved transcript.
 - A lesson contains no more than 10 unique language items.
 - Categories may be empty; items are never invented to fill them.
@@ -81,4 +85,3 @@ Downloaded video or extracted audio used during acquisition. It must not be pers
 - Generated analysis is read-only in v1.
 - Source media is never part of persisted lesson state.
 - Replay and shadowing completion are not tracked.
-

@@ -41,6 +41,10 @@ The exact surrounding transcript text that demonstrates how a language item was 
 
 The complete source transcript with caption artifacts and obvious transcription noise removed while preserving the speaker's wording. It anchors the lesson and contains inline links to selected language items.
 
+## Readability-formatted transcript
+
+A transcript acquired from a URL whose existing punctuation, caption cues, or timing boundaries are used locally to place one sentence-like unit on each line. Formatting changes whitespace and line breaks only, preserves the source words and their order, uses no generative model, and is never applied automatically to manually entered text.
+
 ## Approved transcript
 
 The transcript after learner review and optional correction. It is the authoritative input used to generate and save the lesson analysis.

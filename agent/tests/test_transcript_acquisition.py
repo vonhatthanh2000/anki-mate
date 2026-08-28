@@ -27,8 +27,46 @@ class TranscriptAcquisitionTests(unittest.TestCase):
         )
         self.assertEqual(
             acquisition._caption_text(payload, "json3"),
-            "This is English. Cảm ơn!",
+            "This is English.\nCảm ơn!",
         )
+
+    def test_punctuated_captions_put_each_sentence_on_its_own_line(self):
+        payload = """WEBVTT
+
+00:00:00.000 --> 00:00:02.000
+First sentence. Second
+
+00:00:02.000 --> 00:00:04.000
+sentence! A final question?
+"""
+
+        self.assertEqual(
+            acquisition._caption_text(payload, "vtt"),
+            "First sentence.\nSecond sentence!\nA final question?",
+        )
+
+    def test_unpunctuated_captions_use_cue_boundaries(self):
+        payload = """WEBVTT
+
+00:00:00.000 --> 00:00:02.000
+the first complete caption cue
+
+00:00:02.000 --> 00:00:04.000
+the next complete caption cue
+"""
+
+        self.assertEqual(
+            acquisition._caption_text(payload, "vtt"),
+            "the first complete caption cue\nthe next complete caption cue",
+        )
+
+    def test_readability_formatting_preserves_source_words_and_order(self):
+        source = "One  sentence.   Two words!"
+
+        formatted = acquisition._format_transcript_for_review([source])
+
+        self.assertEqual(formatted, "One sentence.\nTwo words!")
+        self.assertEqual(formatted.split(), source.split())
 
     def test_rolling_vtt_cues_are_merged_without_duplicate_words(self):
         payload = """WEBVTT
@@ -105,11 +143,12 @@ world from captions
             return path
 
         download_audio.side_effect = create_media
-        transcribe.return_value = ("Complete transcript.", "en")
+        transcribe.return_value = ("First sentence. Second sentence!", "en")
 
         result = acquisition.acquire_url({"source": self.source}, object(), object())
 
         self.assertEqual(result["method"], "speech_to_text")
+        self.assertEqual(result["transcript"], "First sentence.\nSecond sentence!")
         self.assertFalse(captured["directory"].exists())
 
     @patch.object(acquisition, "_transcribe")

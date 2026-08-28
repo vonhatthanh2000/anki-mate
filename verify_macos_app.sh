@@ -32,7 +32,7 @@ require_executable "$PYTHON_BIN"
 
 plutil -lint "$CONTENTS_DIR/Info.plist" >/dev/null
 
-"$PYTHON_BIN" -c 'import dotenv, openai, pydantic, yt_dlp' \
+PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" -c 'import dotenv, openai, pydantic, yt_dlp' \
     || fail "bundled Python dependencies cannot be imported"
 
 if [ -f ".env" ]; then
@@ -42,7 +42,7 @@ if [ -f "agent/.env" ]; then
     require_file "$AGENT_DIR/.env"
 fi
 
-"$PYTHON_BIN" - "$RESOURCES_DIR/.env" <<'PY'
+PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" - "$RESOURCES_DIR/.env" <<'PY'
 from pathlib import Path
 import sys
 
@@ -57,7 +57,7 @@ PY
 
 (
     cd "$AGENT_DIR"
-    "$PYTHON_BIN" -c 'import os; from dotenv import load_dotenv; load_dotenv(); raise SystemExit(0 if os.getenv("OPENAI_API_KEY") else "missing packaged credential name: OPENAI_API_KEY")'
+    PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" -c 'import os; from dotenv import load_dotenv; load_dotenv(); raise SystemExit(0 if os.getenv("OPENAI_API_KEY") else "missing packaged credential name: OPENAI_API_KEY")'
 ) || fail "bundled Python agent cannot resolve its OpenAI credential"
 
 if find "$RESOURCES_DIR" \

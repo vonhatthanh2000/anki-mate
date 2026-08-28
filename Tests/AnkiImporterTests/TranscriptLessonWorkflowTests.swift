@@ -440,6 +440,29 @@ struct TranscriptLessonWorkflowTests {
     }
 
     @Test
+    func manuallyEnteredTranscriptKeepsItsReviewedLineStructure() async {
+        let manualTranscript = "\n" + LessonFixtures.transcript.replacingOccurrences(
+            of: ", ",
+            with: ",\n"
+        ) + "\n"
+        let analyzer = AnalyzerFake(analysis: LessonFixtures.analysis(transcript: manualTranscript))
+        let store = StoreFake()
+        let workflow = TranscriptLessonWorkflow(
+            analyzer: analyzer,
+            store: store,
+            acquirer: AcquirerFake(),
+            ankiWriter: AnkiWriterFake()
+        )
+
+        workflow.updateTranscript(manualTranscript)
+        await workflow.analyze()
+
+        #expect(workflow.snapshot.transcript == manualTranscript)
+        #expect(analyzer.analyzeCalls == [manualTranscript])
+        #expect(store.savedLessons.first?.approvedTranscript == manualTranscript)
+    }
+
+    @Test
     func missingCaptionsTransitionThroughUrlTranscriptionFallback() async {
         let source = VideoSource(
             canonicalURL: "https://www.youtube.com/watch?v=fallback",
@@ -567,7 +590,11 @@ struct TranscriptLessonWorkflowTests {
             durationSeconds: 150,
             primaryLanguage: "en"
         )
-        let analyzer = AnalyzerFake(analysis: LessonFixtures.analysis())
+        let reviewedTranscript = LessonFixtures.transcript.replacingOccurrences(
+            of: ", ",
+            with: ",\n"
+        )
+        let analyzer = AnalyzerFake(analysis: LessonFixtures.analysis(transcript: reviewedTranscript))
         let store = StoreFake()
         let writer = AnkiWriterFake(noteID: 808)
         let workflow = TranscriptLessonWorkflow(
@@ -588,7 +615,7 @@ struct TranscriptLessonWorkflowTests {
 
         await workflow.acquireFromSourceURL()
         #expect(workflow.snapshot.phase == .reviewing)
-        workflow.updateTranscript(LessonFixtures.transcript)
+        workflow.updateTranscript(reviewedTranscript)
         await workflow.analyze()
         #expect(workflow.snapshot.lesson?.overview.summary.count == 3)
         #expect(workflow.snapshot.lesson?.items.count == 6)
@@ -609,6 +636,7 @@ struct TranscriptLessonWorkflowTests {
         await workflow.openLesson(id: 42)
 
         let reopened = try #require(workflow.snapshot.lesson)
+        #expect(reopened.approvedTranscript == reviewedTranscript)
         #expect(reopened.sourceURL == source.canonicalURL)
         #expect(reopened.source == source)
         #expect(reopened.attempts.count == 2)
@@ -966,7 +994,7 @@ private enum WorkflowFakeError: Error {
 private enum LessonFixtures {
     static let transcript = "Although the evidence was limited, Maya took the broader context into account, ruled out a quick fix, followed through on the experiment, came across an unexpected pattern, and ended up changing course."
 
-    static func analysis() -> TranscriptLessonAnalysis {
+    static func analysis(transcript approvedTranscript: String = transcript) -> TranscriptLessonAnalysis {
         let expressions: [(String, LanguageCategory)] = [
             ("Although the evidence was limited", .grammarPattern),
             ("took the broader context into account", .collocation),
@@ -976,9 +1004,9 @@ private enum LessonFixtures {
             ("ended up", .phrasalVerb)
         ]
         let items = expressions.enumerated().map { index, entry in
-            let range = transcript.range(of: entry.0)!
-            let start = range.lowerBound.utf16Offset(in: transcript)
-            let end = range.upperBound.utf16Offset(in: transcript)
+            let range = approvedTranscript.range(of: entry.0)!
+            let start = range.lowerBound.utf16Offset(in: approvedTranscript)
+            let end = range.upperBound.utf16Offset(in: approvedTranscript)
             return TranscriptLanguageItem(
                 id: "item-\(index + 1)",
                 expression: entry.0,
