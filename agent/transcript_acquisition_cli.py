@@ -13,7 +13,7 @@ import signal
 import subprocess
 import sys
 import tempfile
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
@@ -33,6 +33,12 @@ class AcquisitionError(Exception):
 class AcquisitionCancelled(AcquisitionError):
     def __init__(self) -> None:
         super().__init__("acquisition", "Acquisition was cancelled.", True)
+
+
+class TranscriptionResult(NamedTuple):
+    text: str
+    language: str | None
+    cues: list[str]
 
 
 def _handle_termination(_signum: int, _frame: Any) -> None:
@@ -171,39 +177,42 @@ def _caption_text(payload: str, extension: str) -> str:
 
 def _format_transcript_for_review(cues: list[str]) -> str:
     """Format URL-derived text without changing its words or their order."""
-    merged_cues: list[list[str]] = []
+    normalized_cues: list[list[str]] = []
     for cue in cues:
         normalized = re.sub(r"\s+", " ", cue).strip()
         if not normalized:
             continue
-        words = normalized.split(" ")
-        overlap = 0
-        if merged_cues:
-            merged_words = merged_cues[-1]
-            for count in range(min(len(merged_words), len(words)), 0, -1):
-                if merged_words[-count:] == words[:count]:
-                    overlap = count
-                    break
-        if overlap:
-            merged_cues[-1].extend(words[overlap:])
-        else:
-            merged_cues.append(words)
+        normalized_cues.append(normalized.split(" "))
 
-    all_words = [word for cue in merged_cues for word in cue]
     sentence_end = re.compile(r"[.!?…]+[\"'’”\)\]]*$")
-    if any(sentence_end.search(word) for word in all_words):
-        units: list[str] = []
-        current: list[str] = []
-        for word in all_words:
+    units: list[str] = []
+    current: list[str] = []
+    for cue in normalized_cues:
+        if current and not any(sentence_end.search(word) for word in cue):
+            units.append(" ".join(current))
+            current = []
+        cue_has_sentence_end = False
+        for word in cue:
             current.append(word)
             if sentence_end.search(word):
+                cue_has_sentence_end = True
                 units.append(" ".join(current))
                 current = []
-        if current:
+        if current and not cue_has_sentence_end:
             units.append(" ".join(current))
-        return "\n".join(units)
+            current = []
+    if current:
+        units.append(" ".join(current))
+    return "\n".join(units)
 
-    return "\n".join(" ".join(cue) for cue in merged_cues)
+
+def _transcription_cues(response: Any) -> list[str]:
+    cues: list[str] = []
+    for segment in getattr(response, "segments", None) or []:
+        text = segment.get("text") if isinstance(segment, dict) else getattr(segment, "text", None)
+        if isinstance(text, str) and text.strip():
+            cues.append(text.strip())
+    return cues
 
 
 def _download_audio(youtube_dl: Any, url: str, job_directory: Path) -> Path:
@@ -316,7 +325,7 @@ def _extract_audio(path: Path, job_directory: Path) -> Path:
     return audio_path
 
 
-def _transcribe(openai_type: Any, path: Path) -> tuple[str, str | None]:
+def _transcribe(openai_type: Any, path: Path) -> TranscriptionResult:
     if not os.getenv("OPENAI_API_KEY"):
         raise AcquisitionError(
             "configuration",
@@ -340,7 +349,11 @@ def _transcribe(openai_type: Any, path: Path) -> tuple[str, str | None]:
     language = getattr(response, "language", None)
     if not isinstance(text, str) or not text.strip():
         raise AcquisitionError("transcription", "Speech-to-text returned an empty transcript.")
-    return text.strip(), language if isinstance(language, str) else None
+    return TranscriptionResult(
+        text=text.strip(),
+        language=language if isinstance(language, str) else None,
+        cues=_transcription_cues(response),
+    )
 
 
 def _source_payload(source: dict[str, Any], info: dict[str, Any], language: str | None) -> dict[str, Any]:
@@ -391,12 +404,14 @@ def transcribe_url(command: dict[str, Any], youtube_dl: Any, openai_type: Any) -
         job_directory = Path(directory)
         media_path = _download_audio(youtube_dl, url, job_directory)
         audio_path = _extract_audio(media_path, job_directory)
-        transcript, language = _transcribe(openai_type, audio_path)
+        transcription = _transcribe(openai_type, audio_path)
         return {
-            "transcript": _format_transcript_for_review([transcript]),
-            "source": _source_payload(source, info, language),
+            "transcript": _format_transcript_for_review(
+                transcription.cues or [transcription.text]
+            ),
+            "source": _source_payload(source, info, transcription.language),
             "method": "speech_to_text",
-            "detectedLanguage": language,
+            "detectedLanguage": transcription.language,
             "durationSeconds": info.get("duration"),
         }
 
@@ -427,15 +442,19 @@ def transcribe_file(command: dict[str, Any], openai_type: Any) -> dict[str, Any]
                 False,
             )
         audio_path = _extract_audio(copied_path, Path(directory))
-        transcript, language = _transcribe(openai_type, audio_path)
+        transcription = _transcribe(openai_type, audio_path)
         source = command.get("source")
         if source:
-            source = {**source, "durationSeconds": duration, "primaryLanguage": language}
+            source = {
+                **source,
+                "durationSeconds": duration,
+                "primaryLanguage": transcription.language,
+            }
         return {
-            "transcript": transcript,
+            "transcript": transcription.text,
             "source": source,
             "method": "speech_to_text",
-            "detectedLanguage": language,
+            "detectedLanguage": transcription.language,
             "durationSeconds": duration,
         }
 

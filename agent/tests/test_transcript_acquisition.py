@@ -60,6 +60,38 @@ the next complete caption cue
             "the first complete caption cue\nthe next complete caption cue",
         )
 
+    def test_mixed_captions_use_punctuation_and_local_cue_boundaries(self):
+        payload = """WEBVTT
+
+00:00:00.000 --> 00:00:02.000
+First sentence. A continued
+
+00:00:02.000 --> 00:00:04.000
+sentence!
+
+00:00:04.000 --> 00:00:06.000
+an unpunctuated caption cue
+"""
+
+        self.assertEqual(
+            acquisition._caption_text(payload, "vtt"),
+            "First sentence.\nA continued sentence!\nan unpunctuated caption cue",
+        )
+
+    def test_unpunctuated_tail_does_not_merge_with_next_unpunctuated_cue(self):
+        self.assertEqual(
+            acquisition._format_transcript_for_review(
+                ["Done. trailing words", "next cue"]
+            ),
+            "Done.\ntrailing words\nnext cue",
+        )
+
+    def test_single_word_overlap_is_preserved_as_possible_repetition(self):
+        self.assertEqual(
+            acquisition._format_transcript_for_review(["I had", "had enough"]),
+            "I had\nhad enough",
+        )
+
     def test_readability_formatting_preserves_source_words_and_order(self):
         source = "One  sentence.   Two words!"
 
@@ -68,22 +100,22 @@ the next complete caption cue
         self.assertEqual(formatted, "One sentence.\nTwo words!")
         self.assertEqual(formatted.split(), source.split())
 
-    def test_rolling_vtt_cues_are_merged_without_duplicate_words(self):
+    def test_caption_formatter_does_not_guess_that_repeated_phrases_are_rollup_artifacts(self):
         payload = """WEBVTT
 
 00:00:00.000 --> 00:00:01.000
-hello
+hello there
 
 00:00:01.000 --> 00:00:02.000
-hello world
+hello there world today
 
 00:00:02.000 --> 00:00:03.000
-world from captions
+world today from captions
 """
 
         self.assertEqual(
             acquisition._caption_text(payload, "vtt"),
-            "hello world from captions",
+            "hello there\nhello there world today\nworld today from captions",
         )
 
     @patch.object(acquisition, "_download_audio")
@@ -143,12 +175,19 @@ world from captions
             return path
 
         download_audio.side_effect = create_media
-        transcribe.return_value = ("First sentence. Second sentence!", "en")
+        transcribe.return_value = acquisition.TranscriptionResult(
+            text="the first timed segment the second timed segment",
+            language="en",
+            cues=["the first timed segment", "the second timed segment"],
+        )
 
         result = acquisition.acquire_url({"source": self.source}, object(), object())
 
         self.assertEqual(result["method"], "speech_to_text")
-        self.assertEqual(result["transcript"], "First sentence.\nSecond sentence!")
+        self.assertEqual(
+            result["transcript"],
+            "the first timed segment\nthe second timed segment",
+        )
         self.assertFalse(captured["directory"].exists())
 
     @patch.object(acquisition, "_transcribe")
@@ -203,7 +242,15 @@ world from captions
         self.assertFalse(captured["directory"].exists())
 
     @patch.object(acquisition, "_probe_duration", return_value=90)
-    @patch.object(acquisition, "_transcribe", return_value=("Local transcript.", "en"))
+    @patch.object(
+        acquisition,
+        "_transcribe",
+        return_value=acquisition.TranscriptionResult(
+            text="Local transcript.",
+            language="en",
+            cues=["Local transcript."],
+        ),
+    )
     @patch.object(acquisition, "_extract_audio", side_effect=lambda path, _directory: path)
     def test_authorized_local_file_is_copied_then_cleaned(self, _extract_audio, transcribe, _probe):
         with tempfile.TemporaryDirectory() as directory:

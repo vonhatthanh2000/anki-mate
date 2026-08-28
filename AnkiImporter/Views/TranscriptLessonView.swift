@@ -13,6 +13,11 @@ struct TranscriptLessonView: View {
         _workflow = StateObject(wrappedValue: TranscriptLessonWorkflow())
     }
 
+    init(selectedFeature: Binding<String?>, workflow: TranscriptLessonWorkflow) {
+        _selectedFeature = selectedFeature
+        _workflow = StateObject(wrappedValue: workflow)
+    }
+
     var body: some View {
         ZStack {
             AppTheme.background.ignoresSafeArea()
@@ -83,7 +88,7 @@ struct TranscriptLessonView: View {
             } label: {
                 Label("Saved lessons", systemImage: "books.vertical")
             }
-            .buttonStyle(TranscriptLessonButtonStyle(fill: AppTheme.card))
+            .buttonStyle(TranscriptLessonButtonStyle(fill: AppTheme.actionSecondary))
 
             Button {
                 acquisitionTask?.cancel()
@@ -130,12 +135,7 @@ struct TranscriptLessonView: View {
                             set: { workflow.updateSourceURL($0) }
                         )
                     )
-                    .textFieldStyle(.plain)
-                    .font(AppTheme.inputFont(size: 16))
-                    .foregroundStyle(AppTheme.text)
-                    .padding(10)
-                    .background(AppTheme.editField)
-                    .overlay(Rectangle().stroke(AppTheme.primary, lineWidth: 2))
+                    .textFieldStyle(TranscriptLessonTextFieldStyle())
                     Button("Get transcript") {
                         acquisitionTask = Task {
                             await workflow.acquireFromSourceURL()
@@ -145,7 +145,7 @@ struct TranscriptLessonView: View {
                     .buttonStyle(TranscriptLessonButtonStyle())
                     .disabled(workflow.snapshot.sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     Button("Choose local file…") { isShowingFileImporter = true }
-                        .buttonStyle(TranscriptLessonButtonStyle(fill: AppTheme.card))
+                        .buttonStyle(TranscriptLessonButtonStyle(fill: AppTheme.actionSecondary))
                 }
 
                 if let warning = workflow.snapshot.durationWarning {
@@ -245,7 +245,7 @@ struct TranscriptLessonView: View {
     }
 }
 
-private struct TranscriptLessonResultView: View {
+struct TranscriptLessonResultView: View {
     @ObservedObject var workflow: TranscriptLessonWorkflow
     let lesson: TranscriptLesson
     @State private var selectedItemID: String?
@@ -259,7 +259,7 @@ private struct TranscriptLessonResultView: View {
                         Link(destination: url) {
                             Label("Open original source for replay and shadowing", systemImage: "arrow.up.right.square")
                         }
-                        .buttonStyle(TranscriptLessonButtonStyle(fill: AppTheme.card))
+                        .buttonStyle(TranscriptLessonButtonStyle(fill: AppTheme.actionSecondary))
                     }
                     meaningOverview
                     transcript(proxy: proxy)
@@ -448,7 +448,7 @@ private struct LanguageItemCard: View {
                     )
                     .frame(minWidth: 160)
                 }
-                .buttonStyle(TranscriptLessonButtonStyle(fill: AppTheme.card))
+                .buttonStyle(TranscriptLessonButtonStyle(fill: AppTheme.actionSecondary))
                 .disabled(isExporting || item.ankiNoteID != nil)
             }
         }
@@ -480,11 +480,7 @@ private struct ExerciseCard: View {
             }
             Text(exercise.prompt)
             TextField("Your answer", text: $answer, axis: .vertical)
-                .textFieldStyle(.plain)
-                .foregroundStyle(AppTheme.text)
-                .padding(10)
-                .background(AppTheme.editField)
-                .overlay(Rectangle().stroke(AppTheme.primary, lineWidth: 2))
+                .textFieldStyle(TranscriptLessonTextFieldStyle())
                 .lineLimit(2...5)
             HStack {
                 Spacer()
@@ -539,7 +535,7 @@ private enum HighlightedTranscriptBuilder {
     }
 }
 
-private struct TranscriptLessonHistoryView: View {
+struct TranscriptLessonHistoryView: View {
     @ObservedObject var workflow: TranscriptLessonWorkflow
     @Binding var isPresented: Bool
 
@@ -605,9 +601,9 @@ private struct TranscriptLessonHistoryView: View {
     }
 }
 
-private struct TranscriptLessonButtonStyle: ButtonStyle {
+struct TranscriptLessonButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
-    var fill: Color = AppTheme.primary
+    var fill: Color = AppTheme.actionPrimary
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -618,5 +614,16 @@ private struct TranscriptLessonButtonStyle: ButtonStyle {
             .background(fill)
             .overlay(Rectangle().stroke(AppTheme.primary, lineWidth: 4))
             .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.45)
+    }
+}
+
+private struct TranscriptLessonTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .font(AppTheme.inputFont(size: 16))
+            .foregroundStyle(AppTheme.text)
+            .padding(10)
+            .background(AppTheme.editField)
+            .overlay(Rectangle().stroke(AppTheme.primary, lineWidth: 2))
     }
 }

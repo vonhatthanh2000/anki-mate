@@ -10,6 +10,10 @@ enum AppTheme {
     static let text = Color(red: 0.18, green: 0.35, blue: 0.42)  // #2E5A6B - Deep Ocean
     static let destructive = Color(red: 0.83, green: 0.09, blue: 0.24)  // #D4183D
 
+    /// Filled actions use existing ocean tokens with accessible white-label contrast.
+    static let actionPrimary = text
+    static let actionSecondary = primary
+
     /// Bright input box in saved-batch edit mode.
     static let editField = Color(red: 0.99, green: 0.99, blue: 1.0)
     /// Placeholder / hint text in edit fields.
