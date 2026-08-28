@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import TranscriptInsightCore
 
@@ -5,11 +6,14 @@ struct TranscriptInsightView: View {
     @Binding private var selectedFeature: FeatureID?
     @StateObject private var store: TranscriptInsightStore
     @FocusState private var isURLFieldFocused: Bool
+    @State private var copyFeedback: String?
 
     @MainActor
     init(selectedFeature: Binding<FeatureID?>) {
         _selectedFeature = selectedFeature
-        _store = StateObject(wrappedValue: TranscriptInsightStore())
+        _store = StateObject(
+            wrappedValue: TranscriptInsightStore(acquisitionClient: PythonTranscriptBackend.live)
+        )
     }
 
     @MainActor
@@ -27,7 +31,7 @@ struct TranscriptInsightView: View {
 
                 VStack(spacing: 24) {
                     urlCard
-                    transcriptPlaceholder
+                    transcriptCard
                 }
                 .padding(32)
             }
@@ -151,23 +155,71 @@ struct TranscriptInsightView: View {
         )
     }
 
-    private var transcriptPlaceholder: some View {
+    private var transcriptCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Transcript")
-                .font(AppTheme.displayFont(size: 20))
-                .foregroundColor(AppTheme.text)
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Transcript")
+                        .font(AppTheme.displayFont(size: 20))
+                        .foregroundColor(AppTheme.text)
+                    if let transcript = store.transcript {
+                        Text("Source: \(transcript.source.displayName)")
+                            .font(AppTheme.inputFont(size: 14))
+                            .foregroundColor(AppTheme.text.opacity(0.8))
+                    }
+                }
 
-            VStack(spacing: 16) {
-                if store.isURLLocked {
-                    ProgressView()
-                        .controlSize(.large)
-                        .tint(AppTheme.primary)
-                    Text(store.processingStatus ?? "")
-                        .accessibilityAddTraits(.updatesFrequently)
+                Spacer()
+
+                if store.transcript != nil {
+                    Button(action: copyTranscript) {
+                        Image(systemName: copyFeedback == nil ? "doc.on.doc" : "checkmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(AppTheme.background)
+                            .frame(width: 36, height: 36)
+                            .background(AppTheme.primary)
+                            .overlay(Rectangle().stroke(AppTheme.primary, lineWidth: 2))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(copyFeedback ?? "Copy transcript")
+                    .help("Copy transcript")
+                }
+            }
+
+            Group {
+                if let transcript = store.transcript {
+                    transcriptRows(transcript)
+                } else if store.isURLLocked {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .controlSize(.large)
+                            .tint(AppTheme.primary)
+                        Text(store.processingStatus ?? "")
+                            .accessibilityAddTraits(.updatesFrequently)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = store.errorMessage {
+                    VStack(spacing: 16) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 32))
+                        Text(error)
+                            .multilineTextAlignment(.center)
+                        Button("Try URL Again") { store.send(.retry) }
+                            .font(AppTheme.displayFont(size: 16))
+                            .foregroundColor(AppTheme.background)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(AppTheme.primary)
+                            .buttonStyle(.plain)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    Image(systemName: "text.alignleft")
-                        .font(.system(size: 32))
-                    Text("Your transcript will appear here after you add a video link.")
+                    VStack(spacing: 16) {
+                        Image(systemName: "text.alignleft")
+                            .font(.system(size: 32))
+                        Text("Your transcript will appear here after you add a video link.")
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .font(AppTheme.inputFont(size: 16))
@@ -179,7 +231,19 @@ struct TranscriptInsightView: View {
                     .stroke(AppTheme.primary, lineWidth: 4)
                     .allowsHitTesting(false)
             )
-            .accessibilityElement(children: .combine)
+
+            if let warning = store.transcript?.cleanupWarning {
+                Text(warning)
+                    .font(AppTheme.inputFont(size: 13))
+                    .foregroundColor(AppTheme.destructive)
+            }
+
+            if let copyFeedback {
+                Text(copyFeedback)
+                    .font(AppTheme.inputFont(size: 14))
+                    .foregroundColor(AppTheme.primary)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -190,12 +254,41 @@ struct TranscriptInsightView: View {
                 .allowsHitTesting(false)
         )
     }
+
+    private func transcriptRows(_ transcript: Transcript) -> some View {
+        ScrollView(.vertical) {
+            ScrollView(.horizontal) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(transcript.sentences.enumerated()), id: \.offset) { _, sentence in
+                        Text(sentence)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                .padding(16)
+                .textSelection(.enabled)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func copyTranscript() {
+        guard let transcript = store.transcript else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(transcript.sentences.joined(separator: "\n"), forType: .string)
+        copyFeedback = "Transcript copied"
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            copyFeedback = nil
+        }
+    }
 }
 
 @MainActor
 private struct TranscriptInsightPreview: View {
     let enteredURL: String
     let phase: TranscriptInsightPhase
+    var transcript: Transcript? = nil
     var width: CGFloat = 1200
     var height: CGFloat = 800
     @State private var selectedFeature: FeatureID? = .transcriptInsight
@@ -203,7 +296,7 @@ private struct TranscriptInsightPreview: View {
     var body: some View {
         TranscriptInsightView(
             selectedFeature: $selectedFeature,
-            store: TranscriptInsightStore(enteredURL: enteredURL, phase: phase)
+            store: TranscriptInsightStore(enteredURL: enteredURL, phase: phase, transcript: transcript)
         )
         .frame(width: width, height: height)
     }
@@ -224,6 +317,36 @@ struct TranscriptInsightView_Previews: PreviewProvider {
                 phase: .checkingTranscript
             )
             .previewDisplayName("Checking")
+            TranscriptInsightPreview(
+                enteredURL: "https://youtu.be/dQw4w9WgXcQ",
+                phase: .transcribingAudio
+            )
+            .previewDisplayName("Transcribing")
+            TranscriptInsightPreview(
+                enteredURL: "https://youtu.be/dQw4w9WgXcQ",
+                phase: .complete,
+                transcript: Transcript(
+                    source: .youtubeCaptions,
+                    sentences: [
+                        "The first caption sentence stays on one selectable row.",
+                        "This deliberately long caption sentence remains complete and horizontally scrollable so that the interface never hides source meaning behind an ellipsis or silent truncation.",
+                        "Repeated spoken content stays present when it genuinely occurs.",
+                        "Repeated spoken content stays present when it genuinely occurs.",
+                    ]
+                )
+            )
+            .previewDisplayName("YouTube Captions")
+            TranscriptInsightPreview(
+                enteredURL: "https://www.tiktok.com/@creator/video/123",
+                phase: .complete,
+                transcript: Transcript(source: .speechToText, sentences: ["Speech-to-text fallback result."])
+            )
+            .previewDisplayName("Speech-to-text")
+            TranscriptInsightPreview(
+                enteredURL: "https://youtu.be/private",
+                phase: .transcriptFailed(message: "This video is unavailable or private. Try another link.")
+            )
+            .previewDisplayName("Fallback Failure")
             TranscriptInsightPreview(
                 enteredURL: "https://youtu.be/dQw4w9WgXcQ",
                 phase: .checkingTranscript,

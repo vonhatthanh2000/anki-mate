@@ -29,6 +29,11 @@ swift run TranscriptInsightChecks
 
 They cover URL validation and the injectable state/action boundary without live platform access.
 
+Transcript acquisition uses `yt-dlp` for platform metadata/media, `ffmpeg` for temporary audio extraction,
+and the OpenAI transcription API only when usable English captions are unavailable. Install the Python
+dependencies with `pip install -r agent/requirements.txt`; speech-to-text also requires `ffmpeg` and
+`OPENAI_API_KEY`.
+
 ## Quick Start
 
 ### Option 1: Build & Run App Bundle
