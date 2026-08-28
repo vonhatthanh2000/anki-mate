@@ -24,7 +24,7 @@ ExerciseKind = Literal["recognition", "production"]
 
 
 class MeaningOverview(BaseModel):
-    summary: list[str] = Field(min_length=3, max_length=5)
+    summary: list[str] = Field(max_length=5)
     mainPoint: str
     supportingIdeas: list[str]
     toneAndRegister: str
@@ -58,7 +58,7 @@ class LessonExercise(BaseModel):
 
 class LessonAnalysis(BaseModel):
     overview: MeaningOverview
-    items: list[LanguageItem] = Field(min_length=6, max_length=10)
+    items: list[LanguageItem] = Field(max_length=10)
     exercises: list[LessonExercise]
 
 
@@ -82,13 +82,13 @@ class EvaluationRequest(BaseModel):
 ANALYSIS_INSTRUCTIONS = """
 You create one concise English lesson from a learner-approved transcript for a CEFR B2 learner.
 
-Explain what the speaker means without researching or fact-checking. Attribute unsupported claims to the speaker. Keep the Meaning Overview short: 3–5 summary sentences, the main point, supporting ideas, tone/register, and only context needed for comprehension.
+Explain what the speaker means without researching or fact-checking. Attribute unsupported claims to the speaker. Keep the Meaning Overview short: up to 5 summary sentences, the main point, supporting ideas, tone/register, and only context needed for comprehension. Do not invent summary sentences to meet a minimum.
 
-Select 6–10 unique high-value transcript expressions across Vocabulary, Idiom, Phrasal verb, Collocation, Slang, and Grammar pattern. Do not fill category quotas. Rank comprehension value, common reusability, and B2+ relevance. CEFR is an estimate, not certification. A lower-level expression is allowed only when its contextual use is subtle or essential, and its rationale must say why.
+Select up to 10 unique high-value transcript expressions across Vocabulary, Idiom, Phrasal verb, Collocation, Slang, and Grammar pattern. Return none when the transcript has no worthwhile examples. Do not fill category quotas or invent items to meet a minimum. Rank comprehension value, common reusability, and B2+ relevance. CEFR is an estimate, not certification. A lower-level expression is allowed only when its contextual use is subtle or essential, and its rationale must say why.
 
 Every expression must be copied exactly and contiguously from the transcript. Give it one primary category and only genuinely useful secondary categories. Explain meaning and usage in clear, concise English. Add a short Vietnamese gloss only for a genuinely difficult sentence-level point; otherwise use null.
 
-Choose 3–5 items for practice using practicePriority values 1 through N. Give each chosen item exactly one recognition exercise and one production exercise. Recognition includes an expected answer and explanation. Production asks for a paraphrase or original sentence and leaves expectedAnswer and explanation null.
+Choose up to 5 items for practice using practicePriority values 1 through N. Practice may be empty, and items must not be selected merely to meet a minimum. Give each chosen item exactly one recognition exercise and one production exercise. Recognition includes an expected answer and explanation. Production asks for a paraphrase or original sentence and leaves expectedAnswer and explanation null.
 """.strip()
 
 EVALUATION_INSTRUCTIONS = """
@@ -161,9 +161,6 @@ def normalize_analysis(analysis: LessonAnalysis, transcript: str) -> LessonAnaly
             )
         )
 
-    if not 6 <= len(normalized_items) <= 10:
-        raise ValueError("Analysis must contain 6–10 unique expressions found in the transcript")
-
     item_ids = {item.id for item in normalized_items}
     normalized_exercises: list[LessonExercise] = []
     for exercise in analysis.exercises:
@@ -192,9 +189,6 @@ def normalize_analysis(analysis: LessonAnalysis, transcript: str) -> LessonAnaly
         kinds = {exercise.kind for exercise in exercises}
         if kinds == {"recognition", "production"} and len(exercises) == 2:
             practiced_ids.append(item.id)
-
-    if not 3 <= len(practiced_ids) <= 5:
-        raise ValueError("Analysis must include both exercise types for 3–5 items")
 
     practiced_ids = practiced_ids[:5]
     practice_rank = {item_id: index + 1 for index, item_id in enumerate(practiced_ids)}

@@ -157,9 +157,10 @@ struct TranscriptLessonView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("2. Review the transcript")
-                        .font(AppTheme.displayFont(size: 22))
+                          .font(AppTheme.displayFont(size: 22))
+                    .foregroundColor(AppTheme.text)
                     Text("Correct names, slang, or misheard phrases. Analysis uses exactly the text you approve here.")
-                        .font(AppTheme.inputFont(size: 15))
+                             .font(AppTheme.inputFont(size: 15))
                         .foregroundColor(AppTheme.text.opacity(0.82))
                 }
 

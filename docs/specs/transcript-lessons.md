@@ -14,7 +14,7 @@ Add Transcript Lessons as a feature alongside BoostVocab in the native macOS app
 
 The learner pastes a YouTube or TikTok URL for a primarily English video. The app performs best-effort local transcript acquisition, using speech-to-text when media must be transcribed. It then stops and presents the complete transcript for review and correction. Analysis begins only after the learner presses Analyze.
 
-The generated lesson starts with a concise Meaning Overview and shows the complete approved transcript with high-value language highlighted inline. It selects 6–10 unique items across Vocabulary, Idiom, Phrasal verb, Collocation, Slang, and Grammar pattern without forcing every category to appear. The 3–5 strongest reusable items receive contextual recognition and typed production practice with concise AI feedback.
+The generated lesson starts with a concise Meaning Overview and shows the complete approved transcript with high-value language highlighted inline. It selects up to 10 unique items across Vocabulary, Idiom, Phrasal verb, Collocation, Slang, and Grammar pattern without forcing every category to appear. Up to 5 of the strongest reusable items receive contextual recognition and typed production practice with concise AI feedback. No minimum content count is required.
 
 Lessons and progress are saved to Supabase. Selected language items can be exported once through AnkiConnect to a dedicated Natural English note type. Downloaded media and extracted audio are temporary and are deleted after transcription. The lesson ends with a clear link back to the original source for independent replay and shadowing.
 
@@ -46,7 +46,7 @@ Lessons and progress are saved to Supabase. Selected language items can be expor
 24. As the learner, I want visible progress during acquisition, transcription, and analysis, so that long-running work does not appear frozen.
 25. As the learner, I want each processing stage to be retryable after a recoverable failure, so that I do not need to restart unnecessarily.
 26. As the learner, I want every lesson to begin with a short Meaning Overview, so that I understand the video's overall message before studying details.
-27. As the learner, I want a 3–5 sentence summary, so that I can quickly confirm the main content.
+27. As the learner, I want up to 5 summary sentences, so that I can quickly confirm the main content without filler.
 28. As the learner, I want the speaker's main point and supporting ideas identified, so that I can follow the structure of the message.
 29. As the learner, I want tone and register identified, so that I understand whether the English is casual, motivational, academic, humorous, or otherwise context-specific.
 30. As the learner, I want brief implied meaning and necessary cultural context explained, so that unstated assumptions do not block comprehension.
@@ -55,7 +55,7 @@ Lessons and progress are saved to Supabase. Selected language items can be expor
 33. As the learner, I want to see the complete approved transcript in the lesson, so that extracted language remains connected to the video's meaning.
 34. As the learner, I want selected language highlighted inline, so that I can see exactly where and how it was used.
 35. As the learner, I want a highlight to navigate to its detailed analysis, so that moving between context and explanation is easy.
-36. As the learner, I want no more than 6–10 selected language items, so that one weekly lesson remains manageable.
+36. As the learner, I want no more than 10 selected language items, so that one weekly lesson remains manageable.
 37. As the learner, I want items ranked by comprehension value and reusability, so that I study the most useful language first.
 38. As the learner, I want B2–C2 language prioritized, so that the lesson helps me progress beyond my current plateau.
 39. As the learner, I want a deceptively simple item included when its contextual use is subtle or essential, so that a CEFR estimate does not hide valuable natural English.
@@ -71,7 +71,7 @@ Lessons and progress are saved to Supabase. Selected language items can be expor
 49. As the learner, I want clear English explanations by default, so that the lesson itself supports English immersion.
 50. As the learner, I want a short Vietnamese gloss only for a genuinely difficult sentence or sentence-level analysis, so that difficult language becomes clear without translating the whole lesson.
 51. As the learner, I want the complete transcript to remain untranslated, so that I practice understanding English directly.
-52. As the learner, I want the 3–5 most reusable items selected for practice, so that exercises focus on language worth retrieving actively.
+52. As the learner, I want up to 5 of the most reusable items selected for practice, so that exercises focus on language worth retrieving actively without a minimum quota.
 53. As the learner, I want contextual recognition exercises, so that I can check whether I understand appropriate meaning and usage.
 54. As the learner, I want typed paraphrase or original-example tasks, so that I practice producing natural English.
 55. As the learner, I want production feedback on meaning, correctness, appropriateness, and naturalness, so that I learn more than whether an answer is technically grammatical.
@@ -113,16 +113,16 @@ Lessons and progress are saved to Supabase. Selected language items can be expor
 - Permit transcript editing only during the review stage. The learner-approved text becomes the authoritative transcript.
 - Require an explicit Analyze action. Do not automatically analyze after transcription.
 - Require structured, schema-validated JSON from transcription-analysis processes. Treat malformed output as a retryable analysis failure rather than partially populating a lesson.
-- Generate a concise Meaning Overview with a 3–5 sentence summary, main point, supporting ideas, tone, register, implications, and only necessary cultural context.
+- Generate a concise Meaning Overview with up to 5 summary sentences, main point, supporting ideas, tone, register, implications, and only necessary cultural context.
 - Do not perform web research or fact-checking. Attribute unsupported assertions to the speaker and keep contextual explanation concise.
-- Select 6–10 unique language items across Vocabulary, Idiom, Phrasal verb, Collocation, Slang, and Grammar pattern.
+- Select up to 10 unique language items across Vocabulary, Idiom, Phrasal verb, Collocation, Slang, and Grammar pattern, with no minimum.
 - Rank items by importance to source comprehension, frequency and reusability, and relevance to a B2 learner. Do not impose per-category quotas.
 - Treat CEFR as an estimated ranking signal. Prioritize B2–C2 items but allow a lower-level item when its contextual use is subtle or essential. Include a selection rationale for every item.
 - Represent each item once with exactly one primary category and zero or more secondary category tags.
 - Preserve a stable transcript-span reference for every item so inline highlights remain connected to the approved transcript. Reject or repair analyzer output whose spans cannot be resolved safely.
 - Store for each language item: expression or pattern, transcript span, source excerpt, primary category, secondary tags, meaning and usage, estimated CEFR level, selection rationale, new natural example, optional targeted Vietnamese gloss, practice priority, and Anki export state.
 - Write explanations and feedback in clear English. Generate Vietnamese only as a short optional gloss for difficult sentence-level analysis; never translate the complete transcript.
-- Generate both contextual recognition and typed production exercises for the 3–5 items with the highest practice priority.
+- Generate both contextual recognition and typed production exercises for up to 5 items with the highest practice priority, with no minimum.
 - Evaluate typed production through the analysis adapter and return feedback on meaning, correctness, contextual appropriateness, and naturalness, including a concise explanation and natural revision.
 - Make generated lesson analysis read-only in v1. Quality correction occurs by editing the transcript before analysis; analysis editing and analysis version history are not introduced.
 - Add normalized Supabase storage for source metadata, transcript lessons, language items, exercises, exercise attempts, and Anki exports.
@@ -154,10 +154,10 @@ Lessons and progress are saved to Supabase. Selected language items can be expor
 - Test that the approved edited transcript, not the raw acquired transcript, is supplied to analysis and saved.
 - Test malformed or schema-invalid analyzer output as a retryable failure with no partial lesson persisted.
 - Test Meaning Overview limits and attribution behavior using deterministic analyzer fixtures rather than asserting exact generative prose.
-- Test item invariants: 6–10 unique items, no category quotas, exactly one primary category, optional secondary tags, resolvable transcript spans, and selection rationales.
+- Test item invariants: no more than 10 unique items, no category quotas, exactly one primary category, optional secondary tags, resolvable transcript spans, and selection rationales.
 - Test CEFR exception behavior through fixtures containing a subtle lower-level expression and assert that the rationale explains its inclusion.
 - Test that Vietnamese glosses are optional and the complete transcript is never translated by the workflow contract.
-- Test that only 3–5 items receive both recognition and production exercises.
+- Test that no more than 5 items receive both recognition and production exercises and that zero practiced items is valid.
 - Test exercise-attempt persistence and observable feedback fields without asserting private prompt construction.
 - Test lesson reopening returns the approved transcript, Meaning Overview, items, attempts, and Anki export state.
 - Test Natural English field mapping at the Anki adapter contract, including special characters and multiline source excerpts.
@@ -201,4 +201,3 @@ Lessons and progress are saved to Supabase. Selected language items can be expor
 - Existing ADRs 0001–0019 and the Transcript Lessons domain glossary are normative context for implementation.
 - The preferred test design uses one deep module and one primary seam. External adapters receive focused contract coverage; internal implementation details do not become separate test surfaces.
 - The issue should receive only the `ready-for-agent` triage label when published.
-

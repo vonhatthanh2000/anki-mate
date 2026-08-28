@@ -2,6 +2,8 @@
 
 Status: Accepted
 
+Minimum-count language is superseded by ADR 0022; layout and upper-bound decisions remain accepted.
+
 ## Context
 
 A categorized list of extracted expressions can lose the video's argument, story, and surrounding context. The learner wants to understand the source deeply before listening again.
@@ -10,9 +12,9 @@ A categorized list of extracted expressions can lose the video's argument, story
 
 Show the complete cleaned transcript as the lesson anchor and highlight every selected language item inline.
 
-Allow a highlight to open or navigate to its detailed analysis. Place the focused 6–10-item lesson after the transcript.
+Allow a highlight to open or navigate to its detailed analysis. Place the focused lesson of up to 10 items after the transcript.
 
-Each selected item includes its primary category, meaning and usage, original source excerpt, estimated CEFR level, selection rationale, and a new natural example. The 3–5 most reusable items also include practice.
+Each selected item includes its primary category, meaning and usage, original source excerpt, estimated CEFR level, selection rationale, and a new natural example. Up to 5 of the most reusable items also include practice.
 
 ## Consequences
 
@@ -20,4 +22,3 @@ Each selected item includes its primary category, meaning and usage, original so
 - Transcript cleanup must preserve the speaker's actual wording and item offsets.
 - The data model needs stable links between transcript spans and lesson items.
 - The interface needs inline highlighting and detail navigation.
-

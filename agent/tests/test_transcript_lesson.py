@@ -101,12 +101,31 @@ class NormalizeAnalysisTests(unittest.TestCase):
             {"item-1", "item-2", "item-3"},
         )
 
-    def test_rejects_expressions_not_present_in_transcript(self):
+    def test_drops_expressions_not_present_without_enforcing_a_minimum(self):
         analysis = self.make_analysis()
         analysis.items[-1].expression = "not present"
 
-        with self.assertRaisesRegex(ValueError, "6–10 unique expressions"):
-            normalize_analysis(analysis, self.transcript)
+        normalized = normalize_analysis(analysis, self.transcript)
+
+        self.assertEqual(len(normalized.items), 5)
+
+    def test_accepts_an_empty_lesson_without_minimum_content(self):
+        analysis = LessonAnalysis(
+            overview=MeaningOverview(
+                summary=[],
+                mainPoint="No high-value lesson content was identified.",
+                supportingIdeas=[],
+                toneAndRegister="Neutral",
+                contextNotes=[],
+            ),
+            items=[],
+            exercises=[],
+        )
+
+        normalized = normalize_analysis(analysis, self.transcript)
+
+        self.assertEqual(normalized.items, [])
+        self.assertEqual(normalized.exercises, [])
 
     def test_spans_use_utf16_offsets_expected_by_swift(self):
         transcript = "🔬 " + self.transcript

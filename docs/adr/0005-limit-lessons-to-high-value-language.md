@@ -2,13 +2,15 @@
 
 Status: Accepted
 
+Minimum-count language is superseded by ADR 0022; the upper bound and ranking decision remain accepted.
+
 ## Context
 
 A 1–3 minute transcript may contain many potentially teachable fragments. Exhaustive extraction would overwhelm the learner, while a fixed quota for every category would encourage weak or fabricated classifications.
 
 ## Decision
 
-Select at most 6–10 language items per lesson across all categories combined.
+Select up to 10 language items per lesson across all categories combined, with no minimum.
 
 Rank candidates by:
 
@@ -24,4 +26,3 @@ Do not impose per-category quotas. A category may be empty.
 - Category distribution reflects the source rather than a template.
 - The analyzer needs to rank candidates, not merely classify them.
 - The interface should explain that omitted categories had no high-value examples.
-

@@ -15,8 +15,8 @@ Run this checklist on the packaged macOS app before releasing Transcript Lessons
 1. In **Transcript Lessons**, paste the supported URL and acquire its captions. Confirm the canonical source and editable transcript appear before any AI analysis begins.
 2. Correct a harmless transcript detail, approve it with **Analyze Approved Transcript**, and confirm the saved result contains:
    - a three-to-five-sentence Meaning Overview;
-   - 6–10 distinct transcript-linked language items; and
-   - recognition and production exercises for 3–5 prioritized items.
+   - no more than 10 distinct transcript-linked language items; and
+   - recognition and production exercises for no more than 5 prioritized items.
 3. Complete one recognition and one production exercise. Close and relaunch the app, open the lesson from history, and confirm both attempts and their feedback reload.
 4. Export one item. Confirm exactly one **Natural English** note appears in Anki with its source URL. Press export again and confirm no second note is created.
 5. Select **Open original source for replay and shadowing** and confirm macOS opens the canonical URL in a registered native app when available, otherwise in the default browser.

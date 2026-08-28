@@ -40,7 +40,7 @@ A unique selected span in the approved transcript. It contains:
 
 ### Exercise
 
-A recognition or typed production prompt owned by a language item. Only the 3–5 strongest reusable items require exercises.
+A recognition or typed production prompt owned by a language item. Up to 5 of the strongest reusable items receive exercises.
 
 ### Exercise attempt
 
@@ -66,7 +66,7 @@ Downloaded video or extracted audio used during acquisition. It must not be pers
 
 - One source video can identify one or more acquisition attempts.
 - One approved transcript produces one transcript lesson in v1.
-- One transcript lesson owns one Meaning Overview and 6–10 unique language items.
+- One transcript lesson owns one Meaning Overview and up to 10 unique language items.
 - One language item may own recognition and production exercises.
 - One exercise may have multiple saved attempts.
 - One language item has at most one successful Natural English Anki export.
@@ -81,7 +81,7 @@ Downloaded video or extracted audio used during acquisition. It must not be pers
 - A lesson contains no more than 10 unique language items.
 - Categories may be empty; items are never invented to fill them.
 - Each item has exactly one primary category.
-- Only 3–5 items are selected for active practice.
+- Up to 5 items are selected for active practice; no minimum is required.
 - Generated analysis is read-only in v1.
 - Source media is never part of persisted lesson state.
 - Replay and shadowing completion are not tracked.

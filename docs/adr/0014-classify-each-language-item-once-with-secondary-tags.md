@@ -2,6 +2,8 @@
 
 Status: Accepted
 
+Minimum-count language is superseded by ADR 0022; classification and upper-bound decisions remain accepted.
+
 ## Context
 
 Natural language categories overlap. An expression may reasonably be both an idiom and a collocation, or both a phrasal verb and slang. Rendering one copy per category would duplicate explanations, exercises, and Anki notes.
@@ -18,6 +20,5 @@ Represent each selected transcript span as one language item with:
 
 - The learner sees no duplicate items.
 - Classification nuance is retained through secondary tags.
-- Ranking and the 6–10-item limit apply to unique items.
+- Ranking and the 10-item upper limit apply to unique items.
 - The data model needs a primary category plus a collection of secondary categories.
-

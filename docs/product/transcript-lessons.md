@@ -34,7 +34,7 @@ The expected cadence is one deeply studied video per week. The product optimizes
 3. The learner reviews and may edit the transcript.
 4. The learner explicitly presses Analyze.
 5. The lesson explains language needed to understand the video's ideas deeply, with emphasis on grammar patterns, collocations, slang, and other important B2-and-above usage.
-6. The 3–5 most reusable items receive both a contextual recognition exercise and an active production task.
+6. Up to 5 of the most reusable items receive both a contextual recognition exercise and an active production task; no minimum is required.
 7. The learner may send selected items through a BoostVocab-style action into a dedicated Natural English Anki note type.
 8. After understanding the lesson, the learner returns to YouTube or TikTok and watches the original video again to strengthen listening comprehension.
 
@@ -64,7 +64,7 @@ The lesson should prioritize language that either:
 
 It should not turn every unfamiliar transcript fragment into an exercise or Anki candidate.
 
-Each lesson contains at most 6–10 selected language items in total, ranked by comprehension value and reusability. Categories do not have quotas and may be empty when the transcript contains no worthwhile example.
+Each lesson contains up to 10 selected language items in total, ranked by comprehension value and reusability. No minimum is required. Categories do not have quotas and may be empty when the transcript contains no worthwhile example.
 
 CEFR is an estimated prioritization signal rather than a strict exclusion rule. The analyzer prioritizes B2–C2 language but may include an apparently lower-level item when its contextual use is subtle, easy to misunderstand, or essential to the video's meaning. Every selected item should state why it was included.
 
@@ -129,7 +129,7 @@ Proposed fields:
 
 ## Agreed practice model
 
-For the 3–5 most reusable lesson items, practice includes both:
+For up to 5 of the most reusable lesson items, practice includes both:
 
 - Contextual recognition: for example, a cloze, usage choice, or sentence transformation.
 - Active production: paraphrase a sentence or create a new example using the target language.
@@ -140,11 +140,11 @@ All practice input is typed. Voice recording, pronunciation assessment, and spok
 
 ## Agreed lesson layout
 
-Each lesson begins with a Meaning Overview, followed by the complete cleaned transcript. Selected language is highlighted inline, and each highlight links to its detailed analysis. The focused 6–10-item lesson follows the transcript.
+Each lesson begins with a Meaning Overview, followed by the complete cleaned transcript. Selected language is highlighted inline, and each highlight links to its detailed analysis. The focused lesson of up to 10 items follows the transcript.
 
 The Meaning Overview contains:
 
-- A 3–5 sentence summary
+- Up to 5 summary sentences, with no minimum
 - The speaker's main point and supporting ideas
 - Tone and register
 - Implied meaning, cultural context, or references needed to follow the video
@@ -159,7 +159,7 @@ Each selected item exposes:
 - Estimated CEFR level
 - Selection rationale
 - New natural example
-- Practice, when the item is among the 3–5 most reusable
+- Practice, when the item is among up to 5 of the most reusable
 
 ## Explanation language
 
@@ -192,7 +192,7 @@ V1 does not include:
 - The analyzer returns no more than 10 unique high-value items and does not fill categories artificially.
 - Each item has one primary category, optional secondary tags, contextual explanation, source excerpt, CEFR estimate, selection rationale, and a new natural example.
 - Short Vietnamese support appears only for genuinely difficult sentence-level analysis.
-- The 3–5 strongest reusable items may include recognition and typed production practice with naturalness feedback.
+- Up to 5 of the strongest reusable items may include recognition and typed production practice with naturalness feedback.
 - Lessons and progress save to Supabase; source media does not.
 - A selected item exports once to the Natural English Anki note type through AnkiConnect.
 - The lesson provides a clear link back to the original source for independent replay and shadowing.

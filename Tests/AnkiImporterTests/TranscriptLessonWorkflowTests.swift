@@ -110,7 +110,7 @@ struct TranscriptLessonWorkflowTests {
     }
 
     @Test
-    func testAnalysisRejectsTooFewOrDuplicateItems() async {
+    func testAnalysisAcceptsFewerItemsButStillRejectsDuplicates() async {
         let base = LessonFixtures.analysis()
         let store = StoreFake()
         let tooFew = TranscriptLessonWorkflow(
@@ -127,9 +127,10 @@ struct TranscriptLessonWorkflowTests {
 
         await tooFew.analyze()
 
-        #expect(tooFew.snapshot.errorMessage?.contains("6–10") == true)
-        #expect(store.savedLessons.isEmpty)
+        #expect(tooFew.snapshot.phase == .ready)
+        #expect(store.savedLessons.first?.items.count == 5)
 
+        let duplicateStore = StoreFake()
         let duplicate = TranscriptLessonWorkflow(
             analyzer: AnalyzerFake(
                 analysis: TranscriptLessonAnalysis(
@@ -138,14 +139,14 @@ struct TranscriptLessonWorkflowTests {
                     exercises: base.exercises
                 )
             ),
-            store: store
+            store: duplicateStore
         )
         duplicate.updateTranscript(LessonFixtures.transcript)
 
         await duplicate.analyze()
 
         #expect(duplicate.snapshot.errorMessage?.contains("same language item") == true)
-        #expect(store.savedLessons.isEmpty)
+        #expect(duplicateStore.savedLessons.isEmpty)
     }
 
     @Test
@@ -158,6 +159,7 @@ struct TranscriptLessonWorkflowTests {
             toneAndRegister: base.overview.toneAndRegister,
             contextNotes: []
         )
+        let shortOverviewStore = StoreFake()
         let invalidWorkflow = TranscriptLessonWorkflow(
             analyzer: AnalyzerFake(
                 analysis: TranscriptLessonAnalysis(
@@ -166,13 +168,14 @@ struct TranscriptLessonWorkflowTests {
                     exercises: base.exercises
                 )
             ),
-            store: StoreFake()
+            store: shortOverviewStore
         )
         invalidWorkflow.updateTranscript(LessonFixtures.transcript)
 
         await invalidWorkflow.analyze()
 
-        #expect(invalidWorkflow.snapshot.errorMessage?.contains("3–5 sentence") == true)
+        #expect(invalidWorkflow.snapshot.phase == .ready)
+        #expect(shortOverviewStore.savedLessons.first?.overview == invalidOverview)
 
         let attributedOverview = MeaningOverview(
             summary: [
@@ -201,6 +204,33 @@ struct TranscriptLessonWorkflowTests {
         await attributedWorkflow.analyze()
 
         #expect(store.savedLessons.first?.overview == attributedOverview)
+    }
+
+    @Test
+    func testAnalysisAcceptsAValidLessonWithNoSummaryItemsOrPractice() async {
+        let minimal = TranscriptLessonAnalysis(
+            overview: MeaningOverview(
+                summary: [],
+                mainPoint: "No high-value lesson content was identified.",
+                supportingIdeas: [],
+                toneAndRegister: "Neutral",
+                contextNotes: []
+            ),
+            items: [],
+            exercises: []
+        )
+        let store = StoreFake()
+        let workflow = TranscriptLessonWorkflow(
+            analyzer: AnalyzerFake(analysis: minimal),
+            store: store
+        )
+        workflow.updateTranscript(LessonFixtures.transcript)
+
+        await workflow.analyze()
+
+        #expect(workflow.snapshot.phase == .ready)
+        #expect(store.savedLessons.first?.items.isEmpty == true)
+        #expect(store.savedLessons.first?.exercises.isEmpty == true)
     }
 
     @Test

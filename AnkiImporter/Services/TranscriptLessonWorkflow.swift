@@ -38,9 +38,9 @@ enum TranscriptLessonWorkflowError: LocalizedError, Equatable {
         case .transcriptRequired:
             return "Paste or enter an English transcript before analyzing."
         case .invalidOverview:
-            return "The Meaning Overview must contain a concise 3–5 sentence summary."
+            return "The Meaning Overview must contain at most 5 summary sentences plus a main point and tone."
         case .invalidItemCount(let count):
-            return "The analysis returned \(count) language items; a lesson needs 6–10 high-value items."
+            return "The analysis returned \(count) language items; a lesson supports at most 10."
         case .duplicateItem(let expression):
             return "The analysis returned the same language item more than once: \(expression)."
         case .invalidCategoryTags(let expression):
@@ -48,7 +48,7 @@ enum TranscriptLessonWorkflowError: LocalizedError, Equatable {
         case .invalidTranscriptSpan(let expression):
             return "The analysis could not connect \"\(expression)\" to the approved transcript."
         case .invalidPracticeSet:
-            return "The analysis must provide recognition and production practice for 3–5 items."
+            return "The analysis may provide recognition and production practice for at most 5 items."
         case .lessonNotSaved:
             return "Save the lesson before recording practice."
         case .exerciseNotFound:
@@ -493,12 +493,12 @@ final class TranscriptLessonWorkflow: ObservableObject {
     }
 
     private func validate(_ analysis: TranscriptLessonAnalysis, transcript: String) throws {
-        guard (3...5).contains(analysis.overview.summary.count),
+        guard analysis.overview.summary.count <= 5,
               !analysis.overview.mainPoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !analysis.overview.toneAndRegister.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw TranscriptLessonWorkflowError.invalidOverview
         }
-        guard (6...10).contains(analysis.items.count) else {
+        guard analysis.items.count <= 10 else {
             throw TranscriptLessonWorkflowError.invalidItemCount(analysis.items.count)
         }
 
@@ -523,7 +523,7 @@ final class TranscriptLessonWorkflow: ObservableObject {
         }
 
         let grouped = Dictionary(grouping: analysis.exercises, by: \.itemID)
-        guard (3...5).contains(grouped.count) else {
+        guard grouped.count <= 5 else {
             throw TranscriptLessonWorkflowError.invalidPracticeSet
         }
         guard Set(analysis.exercises.map(\.id)).count == analysis.exercises.count else {
@@ -541,8 +541,9 @@ final class TranscriptLessonWorkflow: ObservableObject {
         }
         let practicedItems = analysis.items.filter { $0.practicePriority != nil }
         let priorities = Set(practicedItems.compactMap(\.practicePriority))
+        let expectedPriorities = grouped.isEmpty ? Set<Int>() : Set(1...grouped.count)
         guard Set(practicedItems.map(\.id)) == Set(grouped.keys),
-              priorities == Set(1...grouped.count) else {
+              priorities == expectedPriorities else {
             throw TranscriptLessonWorkflowError.invalidPracticeSet
         }
     }
