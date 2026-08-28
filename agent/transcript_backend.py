@@ -55,8 +55,7 @@ def _is_prefix(shorter: str, longer: str) -> bool:
     return longer == shorter or longer.startswith(shorter + " ")
 
 
-def sentences_from_cues(cues: Iterable[Cue]) -> list[str]:
-    """Convert ordered cues into complete sentences without rolling-caption duplicates."""
+def _collapse_cues(cues: Iterable[Cue]) -> list[Cue]:
     collapsed: list[Cue] = []
     for cue in cues:
         normalized = Cue(_normalize_text(cue.text), cue.start, max(cue.start, cue.end))
@@ -70,6 +69,12 @@ def sentences_from_cues(cues: Iterable[Cue]) -> list[str]:
             if _is_prefix(normalized.text, previous.text):
                 continue
         collapsed.append(normalized)
+    return collapsed
+
+
+def sentences_from_cues(cues: Iterable[Cue]) -> list[str]:
+    """Convert ordered cues into complete sentences without rolling-caption duplicates."""
+    collapsed = _collapse_cues(cues)
 
     combined = _normalize_text(" ".join(cue.text for cue in collapsed))
     if not combined:
@@ -77,6 +82,148 @@ def sentences_from_cues(cues: Iterable[Cue]) -> list[str]:
 
     pattern = re.compile(r".+?(?:[.!?]+(?:[\"'”’]+)?(?=\s|$)|$)")
     return [sentence.strip() for sentence in pattern.findall(combined) if sentence.strip()]
+
+
+def _canonical_characters(value: str) -> str:
+    return "".join(character.lower() for character in value if character.isalnum())
+
+
+def _ensure_terminal_punctuation(value: str) -> str:
+    normalized = _normalize_text(value)
+    if normalized and normalized[-1] not in ".!?\"'”’":
+        normalized += "."
+    return normalized
+
+
+def _capitalize_sentence(value: str) -> str:
+    value = re.sub(r"\bi\b", "I", value)
+    for index, character in enumerate(value):
+        if character.isalpha():
+            return value[:index] + character.upper() + value[index + 1 :]
+    return value
+
+
+def _heuristic_punctuation(cues: Sequence[Cue]) -> list[str]:
+    words = _normalize_text(" ".join(cue.text for cue in _collapse_cues(cues))).split()
+    if not words:
+        return []
+
+    boundary_words = {
+        "after",
+        "before",
+        "during",
+        "finally",
+        "however",
+        "meanwhile",
+        "next",
+        "often",
+        "sometimes",
+        "then",
+        "therefore",
+        "today",
+        "usually",
+        "when",
+    }
+    chunks: list[list[str]] = []
+    current: list[str] = []
+    for word in words:
+        normalized_word = re.sub(r"[^\w]", "", word).lower()
+        if current and len(current) >= 12 and normalized_word in boundary_words:
+            chunks.append(current)
+            current = []
+        current.append(word)
+        if len(current) >= 22:
+            chunks.append(current)
+            current = []
+    if current:
+        chunks.append(current)
+
+    return [
+        _ensure_terminal_punctuation(_capitalize_sentence(" ".join(chunk)))
+        for chunk in chunks
+        if chunk
+    ]
+
+
+class PunctuationRestorer:
+    """Restore sentence boundaries while enforcing exact spoken-word preservation."""
+
+    def __init__(self, completion: Optional[Callable[[str], Sequence[str]]] = None):
+        self.completion = completion or _default_punctuation_completion
+        self.uses_default_completion = completion is None
+
+    def restore(self, cues: Iterable[Cue]) -> list[str]:
+        cue_list = list(cues)
+        existing = sentences_from_cues(cue_list)
+        text = _normalize_text(" ".join(cue.text for cue in _collapse_cues(cue_list)))
+        word_count = len(text.split())
+        if not text or word_count < 20 or len(existing) >= max(2, word_count // 30):
+            return existing
+
+        mode = os.getenv("TRANSCRIPT_PUNCTUATION_MODE", "auto").lower()
+        if mode == "off":
+            return existing
+        if mode != "local" and (not self.uses_default_completion or _has_openai_key()):
+            try:
+                candidate = [
+                    _ensure_terminal_punctuation(sentence)
+                    for sentence in self.completion(text)
+                    if _normalize_text(sentence)
+                ]
+                if len(candidate) > 1 and _canonical_characters(" ".join(candidate)) == _canonical_characters(text):
+                    return candidate
+            except Exception:
+                pass
+        return _heuristic_punctuation(cue_list)
+
+
+def _load_agent_environment() -> None:
+    from dotenv import load_dotenv
+
+    agent_directory = Path(__file__).resolve().parent
+    load_dotenv(agent_directory / ".env")
+    load_dotenv(agent_directory.parent / ".env")
+
+
+def _has_openai_key() -> bool:
+    try:
+        _load_agent_environment()
+    except ImportError:
+        return False
+    return bool(os.getenv("OPENAI_API_KEY"))
+
+
+def _default_punctuation_completion(text: str) -> Sequence[str]:
+    from openai import OpenAI
+
+    _load_agent_environment()
+    response = OpenAI(api_key=os.getenv("OPENAI_API_KEY")).responses.create(
+        model=os.getenv("OPENAI_PUNCTUATION_MODEL", "gpt-4o-mini"),
+        instructions=(
+            "Restore capitalization, punctuation, and sentence boundaries in the transcript. "
+            "Do not add, remove, replace, reorder, or correct any spoken word. Keep repetitions. "
+            "Return each complete sentence as one array item."
+        ),
+        input=text,
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "punctuated_transcript",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "sentences": {"type": "array", "items": {"type": "string"}}
+                    },
+                    "required": ["sentences"],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        max_output_tokens=min(max(512, len(text) // 2), 12000),
+        store=False,
+    )
+    return json.loads(response.output_text)["sentences"]
 
 
 def _parse_time(value: str) -> float:
@@ -200,9 +347,11 @@ class CaptionAcquirer:
         self,
         extract_info: Callable[[str], dict[str, Any]] = _default_extract_info,
         download_text: Callable[[str, dict[str, str]], str] = _default_download_text,
+        punctuation_restorer: Optional[PunctuationRestorer] = None,
     ):
         self.extract_info = extract_info
         self.download_text = download_text
+        self.punctuation_restorer = punctuation_restorer or PunctuationRestorer()
 
     def acquire(self, exact_url: str) -> TranscriptResult:
         try:
@@ -226,7 +375,9 @@ class CaptionAcquirer:
 
         payload = self.download_text(selected["url"], info.get("http_headers") or {})
         try:
-            sentences = sentences_from_cues(parse_caption_payload(payload, selected.get("ext", "vtt")))
+            sentences = self.punctuation_restorer.restore(
+                parse_caption_payload(payload, selected.get("ext", "vtt"))
+            )
         except (ET.ParseError, ValueError, KeyError, json.JSONDecodeError) as error:
             raise CaptionUnavailable("The available English caption track could not be read.") from error
         if not sentences:
@@ -302,12 +453,9 @@ def _default_audio_extractor(media_path: Path, directory: Path) -> Path:
 
 def _default_transcriber(audio_path: Path) -> list[Cue]:
     try:
-        from dotenv import load_dotenv
         from openai import OpenAI
 
-        agent_directory = Path(__file__).resolve().parent
-        load_dotenv(agent_directory / ".env")
-        load_dotenv(agent_directory.parent / ".env")
+        _load_agent_environment()
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         with audio_path.open("rb") as audio:
             response = client.audio.transcriptions.create(
@@ -350,12 +498,14 @@ class SpeechToTextFallback:
         transcriber: Callable[[Path], list[Cue]] = _default_transcriber,
         temporary_directory: Callable[[], Path] = _default_temporary_directory,
         cleanup: Callable[[Path], None] = _default_cleanup,
+        punctuation_restorer: Optional[PunctuationRestorer] = None,
     ):
         self.media_acquirer = media_acquirer
         self.audio_extractor = audio_extractor
         self.transcriber = transcriber
         self.temporary_directory = temporary_directory
         self.cleanup = cleanup
+        self.punctuation_restorer = punctuation_restorer or PunctuationRestorer()
 
     def transcribe(self, exact_url: str) -> TranscriptResult:
         try:
@@ -388,7 +538,7 @@ class SpeechToTextFallback:
             except Exception as error:
                 raise BackendError("transcription_failed", "We couldn’t transcribe this video. Try again.") from error
 
-            sentences = sentences_from_cues(cues)
+            sentences = self.punctuation_restorer.restore(cues)
             if not sentences:
                 raise BackendError("transcription_failed", "Speech-to-text returned an empty transcript.")
             result = TranscriptResult(source="speech_to_text", sentences=sentences)

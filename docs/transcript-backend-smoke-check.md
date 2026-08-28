@@ -22,6 +22,10 @@ Confirm that the JSON result:
 - contains ordered, complete sentence strings;
 - corresponds to the exact submitted video.
 
+For an auto-caption track without punctuation, confirm the result contains readable sentence rows and that
+the words still match the source exactly. Repeat with `TRANSCRIPT_PUNCTUATION_MODE=local` to exercise the
+offline fallback.
+
 ## Speech-to-text fallback
 
 Use a supported public video without usable English captions:

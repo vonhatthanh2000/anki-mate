@@ -11,6 +11,7 @@ from transcript_backend import (
     CaptionAcquirer,
     CaptionUnavailable,
     Cue,
+    PunctuationRestorer,
     SpeechToTextFallback,
     parse_caption_payload,
     sentences_from_cues,
@@ -69,6 +70,53 @@ class CaptionAcquirerTests(unittest.TestCase):
 
 
 class SentenceSegmentationTests(unittest.TestCase):
+    def test_restores_punctuation_without_changing_spoken_words(self):
+        original = (
+            "how to talk about daily routines my daily routine is nothing special "
+            "I usually wake up early around 7am breakfast is not important to me "
+            "so I usually only drink a cup of coffee"
+        )
+        restored = [
+            "How to talk about daily routines.",
+            "My daily routine is nothing special.",
+            "I usually wake up early around 7 a.m.",
+            "Breakfast is not important to me, so I usually only drink a cup of coffee.",
+        ]
+        calls = []
+        restorer = PunctuationRestorer(lambda text: (calls.append(text), restored)[1])
+
+        result = restorer.restore([Cue(original, 0, 20)])
+
+        self.assertEqual(calls, [original])
+        self.assertEqual(result, restored)
+
+    def test_rejects_punctuation_output_that_rewrites_words(self):
+        original = (
+            "this deliberately long transcript contains the exact spoken words and the punctuation service "
+            "must never remove important content or add invented language while it creates readable sentences"
+        )
+        restorer = PunctuationRestorer(
+            lambda _text: ["This deliberately long transcript contains rewritten words."]
+        )
+
+        result = restorer.restore([Cue(original, 0, 20)])
+
+        original_characters = "".join(character.lower() for character in original if character.isalnum())
+        result_characters = "".join(character.lower() for character in " ".join(result) if character.isalnum())
+        self.assertEqual(result_characters, original_characters)
+        self.assertGreater(len(result), 1)
+
+    def test_skips_punctuation_service_for_already_segmented_text(self):
+        calls = []
+        restorer = PunctuationRestorer(lambda text: calls.append(text))
+
+        result = restorer.restore(
+            [Cue("This is already clear.", 0, 1), Cue("It has sentence boundaries!", 1, 2)]
+        )
+
+        self.assertEqual(result, ["This is already clear.", "It has sentence boundaries!"])
+        self.assertEqual(calls, [])
+
     def test_vtt_collapses_rolling_lines_within_a_cue(self):
         payload = """WEBVTT
 

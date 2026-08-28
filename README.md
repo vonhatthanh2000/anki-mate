@@ -30,9 +30,13 @@ swift run TranscriptInsightChecks
 They cover URL validation and the injectable state/action boundary without live platform access.
 
 Transcript acquisition uses `yt-dlp` for platform metadata/media, `ffmpeg` for temporary audio extraction,
-and the OpenAI transcription API only when usable English captions are unavailable. Install the Python
-dependencies with `pip install -r agent/requirements.txt`; speech-to-text also requires `ffmpeg` and
-`OPENAI_API_KEY`.
+and the OpenAI transcription API when usable English captions are unavailable. Long caption tracks without
+sentence punctuation are restored with `gpt-4o-mini`; the result is accepted only when every original spoken
+word is preserved in order. Install the Python dependencies with `pip install -r agent/requirements.txt`;
+speech-to-text and AI punctuation require `OPENAI_API_KEY`, and speech-to-text also requires `ffmpeg`.
+
+Set `TRANSCRIPT_PUNCTUATION_MODE=local` to use only local length heuristics, or `off` to disable restoration.
+Override the default punctuation model with `OPENAI_PUNCTUATION_MODEL`.
 
 ## Quick Start
 
