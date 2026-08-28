@@ -1,13 +1,18 @@
 import SwiftUI
 
 struct HomeView: View {
-    @Binding var selectedFeature: String?
+    @Binding var selectedFeature: FeatureID?
 
     let features = [
         Feature(
-            id: "boost-vocab",
+            id: .boostVocab,
             name: "BoostVocab",
             imageURL: "https://images.unsplash.com/photo-1588912914017-923900a34710?w=800"
+        ),
+        Feature(
+            id: .transcriptInsight,
+            name: "Transcript Insight",
+            imageURL: "https://images.unsplash.com/photo-1536240478700-b869070f9279?w=800"
         )
     ]
 
@@ -37,14 +42,20 @@ struct HomeView: View {
                 )
 
                 HStack {
-                    LazyVGrid(columns: [GridItem(.flexible(minimum: 300, maximum: 400))], spacing: 32) {
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(minimum: 300, maximum: 400)),
+                            GridItem(.flexible(minimum: 300, maximum: 400)),
+                        ],
+                        spacing: 32
+                    ) {
                         ForEach(features) { feature in
                             FeatureCard(feature: feature) {
                                 selectedFeature = feature.id
                             }
                         }
                     }
-                    .frame(maxWidth: 400)
+                    .frame(maxWidth: 832)
                     Spacer()
                 }
                 .padding(.horizontal, 32)

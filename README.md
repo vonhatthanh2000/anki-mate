@@ -19,6 +19,16 @@
 - OpenAI API key (for AI generation)
 - Supabase account (for cloud database)
 
+## Development checks
+
+Run the dependency-free Transcript Insight feature checks with:
+
+```bash
+swift run TranscriptInsightChecks
+```
+
+They cover URL validation and the injectable state/action boundary without live platform access.
+
 ## Quick Start
 
 ### Option 1: Build & Run App Bundle
