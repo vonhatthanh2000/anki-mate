@@ -39,6 +39,7 @@ enum PythonAgentRuntime {
             holder.set(process)
             process.executableURL = URL(fileURLWithPath: pythonPath)
             process.arguments = [scriptPath] + arguments
+            process.currentDirectoryURL = URL(fileURLWithPath: scriptPath).deletingLastPathComponent()
 
             let outputPipe = Pipe()
             let errorPipe = Pipe()

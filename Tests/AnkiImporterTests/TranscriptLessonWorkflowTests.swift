@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import AnkiImporter
 
@@ -467,7 +468,8 @@ struct TranscriptLessonWorkflowTests {
 
         await workflow.acquireFromSourceURL()
 
-        #expect(acquirer.transcribedSources == [source])
+        #expect(acquirer.transcribedSources.map(\.canonicalURL) == [source.canonicalURL])
+        #expect(acquirer.transcribedSources.map(\.platform) == [source.platform])
         #expect(workflow.snapshot.acquisitionMethod == .speechToText)
         #expect(workflow.snapshot.phase == .reviewing)
     }
@@ -557,6 +559,121 @@ struct TranscriptLessonWorkflowTests {
     }
 
     @Test
+    func packagedWeeklyWorkflowPersistsPracticeExportAndSourceAcrossReopen() async throws {
+        let source = VideoSource(
+            canonicalURL: "https://www.youtube.com/watch?v=weekly",
+            platform: .youtube,
+            title: "Weekly English lesson",
+            durationSeconds: 150,
+            primaryLanguage: "en"
+        )
+        let analyzer = AnalyzerFake(analysis: LessonFixtures.analysis())
+        let store = StoreFake()
+        let writer = AnkiWriterFake(noteID: 808)
+        let workflow = TranscriptLessonWorkflow(
+            analyzer: analyzer,
+            store: store,
+            acquirer: AcquirerFake(
+                result: TranscriptAcquisition(
+                    transcript: LessonFixtures.transcript,
+                    source: source,
+                    method: .captions,
+                    detectedLanguage: "en",
+                    durationSeconds: 150
+                )
+            ),
+            ankiWriter: writer
+        )
+        workflow.updateSourceURL("https://youtu.be/weekly")
+
+        await workflow.acquireFromSourceURL()
+        #expect(workflow.snapshot.phase == .reviewing)
+        workflow.updateTranscript(LessonFixtures.transcript)
+        await workflow.analyze()
+        #expect(workflow.snapshot.lesson?.overview.summary.count == 3)
+        #expect(workflow.snapshot.lesson?.items.count == 6)
+
+        await workflow.submitAnswer(
+            exerciseID: "item-1-recognition",
+            answer: "It introduces a contrast despite limited evidence."
+        )
+        await workflow.submitAnswer(
+            exerciseID: "item-1-production",
+            answer: "I took the broader context into account."
+        )
+        await workflow.exportToAnki(itemID: "item-1")
+        await workflow.exportToAnki(itemID: "item-1")
+
+        workflow.reset()
+        await workflow.loadHistory()
+        await workflow.openLesson(id: 42)
+
+        let reopened = try #require(workflow.snapshot.lesson)
+        #expect(reopened.sourceURL == source.canonicalURL)
+        #expect(reopened.source == source)
+        #expect(reopened.attempts.count == 2)
+        #expect(reopened.items[0].ankiNoteID == 808)
+        #expect(writer.notes.count == 1)
+        #expect(store.savedExports.count == 1)
+    }
+
+    @Test
+    func retriesAnalysisAndLessonPersistenceAtTheirOwnStages() async {
+        let analysisAnalyzer = AnalyzerFake(analysis: LessonFixtures.analysis(), analyzeFailuresRemaining: 1)
+        let analysisWorkflow = TranscriptLessonWorkflow(analyzer: analysisAnalyzer, store: StoreFake())
+        analysisWorkflow.updateTranscript(LessonFixtures.transcript)
+
+        await analysisWorkflow.analyze()
+        #expect(analysisWorkflow.snapshot.failureStage == .analysis)
+        await analysisWorkflow.analyze()
+        #expect(analysisAnalyzer.analyzeCalls.count == 2)
+        #expect(analysisWorkflow.snapshot.phase == .ready)
+
+        let persistenceAnalyzer = AnalyzerFake(analysis: LessonFixtures.analysis())
+        let persistenceStore = StoreFake(saveLessonFailuresRemaining: 1)
+        let persistenceWorkflow = TranscriptLessonWorkflow(
+            analyzer: persistenceAnalyzer,
+            store: persistenceStore
+        )
+        persistenceWorkflow.updateTranscript(LessonFixtures.transcript)
+
+        await persistenceWorkflow.analyze()
+        #expect(persistenceWorkflow.snapshot.failureStage == .persistence)
+        await persistenceWorkflow.analyze()
+        #expect(persistenceAnalyzer.analyzeCalls.count == 1)
+        #expect(persistenceWorkflow.snapshot.phase == .ready)
+    }
+
+    @Test
+    func retriesPracticePersistenceAndAnkiExportWithoutRepeatingExternalWork() async {
+        let analyzer = AnalyzerFake(analysis: LessonFixtures.analysis())
+        let store = StoreFake(saveAttemptFailuresRemaining: 1, saveExportFailuresRemaining: 1)
+        store.lessonsByID[42] = store.makeSavedLesson()
+        let writer = AnkiWriterFake(noteID: 909)
+        let workflow = TranscriptLessonWorkflow(
+            analyzer: analyzer,
+            store: store,
+            acquirer: AcquirerFake(),
+            ankiWriter: writer
+        )
+        await workflow.openLesson(id: 42)
+
+        let answer = "I took the broader context into account."
+        await workflow.submitAnswer(exerciseID: "item-1-production", answer: answer)
+        #expect(workflow.snapshot.failureStage == .persistence)
+        await workflow.submitAnswer(exerciseID: "item-1-production", answer: answer)
+        #expect(analyzer.evaluationRequests.count == 1)
+        #expect(workflow.snapshot.lesson?.attempts.count == 1)
+
+        await workflow.exportToAnki(itemID: "item-1")
+        #expect(workflow.snapshot.failureStage == .persistence)
+        await workflow.exportToAnki(itemID: "item-1")
+        #expect(writer.notes.count == 1)
+        #expect(store.savedExports.count == 1)
+        #expect(workflow.snapshot.lesson?.items[0].ankiNoteID == 909)
+    }
+
+    @Test
     func noteMappingsPreserveSpecialCharactersAndMultilineText() {
         let boost = AnkiNoteMapping.boostVocab(
             deckName: "Vocab",
@@ -641,13 +758,19 @@ private final class AnalyzerFake: TranscriptLessonAnalyzing {
     let analysis: TranscriptLessonAnalysis
     var analyzeCalls: [String] = []
     var evaluationRequests: [ExerciseEvaluationRequest] = []
+    var analyzeFailuresRemaining: Int
 
-    init(analysis: TranscriptLessonAnalysis) {
+    init(analysis: TranscriptLessonAnalysis, analyzeFailuresRemaining: Int = 0) {
         self.analysis = analysis
+        self.analyzeFailuresRemaining = analyzeFailuresRemaining
     }
 
     func analyze(transcript: String) async throws -> TranscriptLessonAnalysis {
         analyzeCalls.append(transcript)
+        if analyzeFailuresRemaining > 0 {
+            analyzeFailuresRemaining -= 1
+            throw WorkflowFakeError.injected
+        }
         return analysis
     }
 
@@ -664,13 +787,39 @@ private final class StoreFake: TranscriptLessonStoring {
     var lessonsByID: [Int64: TranscriptLesson] = [:]
     var savedAttempts: [ExerciseAttempt] = []
     var savedExports: [(noteID: Int64, itemID: String, lessonID: Int64)] = []
+    var saveLessonFailuresRemaining: Int
+    var saveAttemptFailuresRemaining: Int
+    var saveExportFailuresRemaining: Int
+
+    init(
+        saveLessonFailuresRemaining: Int = 0,
+        saveAttemptFailuresRemaining: Int = 0,
+        saveExportFailuresRemaining: Int = 0
+    ) {
+        self.saveLessonFailuresRemaining = saveLessonFailuresRemaining
+        self.saveAttemptFailuresRemaining = saveAttemptFailuresRemaining
+        self.saveExportFailuresRemaining = saveExportFailuresRemaining
+    }
 
     func saveLesson(_ lesson: TranscriptLesson) async throws -> TranscriptLesson {
+        if saveLessonFailuresRemaining > 0 {
+            saveLessonFailuresRemaining -= 1
+            throw WorkflowFakeError.injected
+        }
         savedLessons.append(lesson)
         var saved = lesson
         saved.id = 42
         saved.createdAt = "2026-08-27T00:00:00Z"
         lessonsByID[42] = saved
+        summaries = [
+            TranscriptLessonSummary(
+                id: 42,
+                createdAt: saved.createdAt!,
+                sourceURL: saved.sourceURL,
+                mainPoint: saved.overview.mainPoint,
+                itemCount: saved.items.count
+            )
+        ]
         return saved
     }
 
@@ -686,15 +835,27 @@ private final class StoreFake: TranscriptLessonStoring {
     }
 
     func saveAttempt(_ attempt: ExerciseAttempt, lessonID: Int64) async throws -> ExerciseAttempt {
+        if saveAttemptFailuresRemaining > 0 {
+            saveAttemptFailuresRemaining -= 1
+            throw WorkflowFakeError.injected
+        }
         var saved = attempt
         saved.id = Int64(savedAttempts.count + 1)
         saved.createdAt = "2026-08-27T00:00:00Z"
         savedAttempts.append(saved)
+        lessonsByID[lessonID]?.attempts.append(saved)
         return saved
     }
 
     func saveAnkiExport(noteID: Int64, itemID: String, lessonID: Int64) async throws {
+        if saveExportFailuresRemaining > 0 {
+            saveExportFailuresRemaining -= 1
+            throw WorkflowFakeError.injected
+        }
         savedExports.append((noteID, itemID, lessonID))
+        if let index = lessonsByID[lessonID]?.items.firstIndex(where: { $0.id == itemID }) {
+            lessonsByID[lessonID]?.items[index].ankiNoteID = noteID
+        }
     }
 
     func makeSavedLesson(sourceURL: String? = nil) -> TranscriptLesson {
@@ -796,6 +957,10 @@ private final class SuspendedAcquirerFake: TranscriptAcquiring {
 
 private enum StoreFakeError: Error {
     case lessonNotFound
+}
+
+private enum WorkflowFakeError: Error {
+    case injected
 }
 
 private enum LessonFixtures {

@@ -5,8 +5,8 @@ cd "$(dirname "$0")"
 echo "Building AnkiImporter app bundle..."
 
 # Build Swift release binary
-swift build -c release
-BIN_DIR="$(swift build -c release --show-bin-path)"
+swift build -c release --disable-sandbox
+BIN_DIR="$(swift build -c release --disable-sandbox --show-bin-path)"
 
 # App bundle paths
 APP_DIR="build/AnkiImporter.app"
@@ -56,6 +56,8 @@ echo "Python agent added to bundle"
 # Remove .pyc files and __pycache__ from agent
 find "$AGENT_DIR" -name "*.pyc" -delete 2>/dev/null || true
 find "$AGENT_DIR" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+
+./verify_macos_app.sh "$APP_DIR"
 
 echo ""
 echo "✅ Built: $APP_DIR"

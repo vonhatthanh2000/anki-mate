@@ -31,6 +31,8 @@
 open "build/AnkiImporter.app"
 ```
 
+Packaging verifies the app structure, bundled Python imports, credential names, and temporary-media hygiene. Release checks are documented in the [Transcript Lessons packaged weekly smoke test](docs/testing/transcript-lessons-weekly-smoke-test.md).
+
 ### Option 2: Run from Source
 
 ```bash

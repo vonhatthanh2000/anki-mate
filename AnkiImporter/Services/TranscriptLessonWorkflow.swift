@@ -69,6 +69,14 @@ enum TranscriptLessonWorkflowError: LocalizedError, Equatable {
     }
 }
 
+enum TranscriptLessonFailureStage: Equatable, Sendable {
+    case acquisition
+    case transcription
+    case analysis
+    case persistence
+    case anki
+}
+
 @MainActor
 final class TranscriptLessonWorkflow: ObservableObject {
     enum Phase: Equatable {
@@ -93,7 +101,7 @@ final class TranscriptLessonWorkflow: ObservableObject {
         var history: [TranscriptLessonSummary] = []
         var evaluatingExerciseIDs: Set<String> = []
         var exportingItemIDs: Set<String> = []
-        var failureStage: TranscriptAcquisitionStage?
+        var failureStage: TranscriptLessonFailureStage?
         var canUseManualFallback = false
         var canRetryAcquisition = false
         var errorMessage: String?
@@ -106,6 +114,9 @@ final class TranscriptLessonWorkflow: ObservableObject {
     private let acquirer: TranscriptAcquiring
     private let ankiWriter: AnkiNoteWriting
     private var activeAcquisitionID: UUID?
+    private var pendingLesson: TranscriptLesson?
+    private var pendingAttempts: [String: ExerciseAttempt] = [:]
+    private var pendingExportNoteIDs: [String: Int64] = [:]
 
     init(
         analyzer: TranscriptLessonAnalyzing,
@@ -137,6 +148,7 @@ final class TranscriptLessonWorkflow: ObservableObject {
         snapshot.failureStage = nil
         snapshot.canRetryAcquisition = false
         activeAcquisitionID = nil
+        clearPendingWork()
         snapshot.phase = .sourceEntry
     }
 
@@ -212,23 +224,31 @@ final class TranscriptLessonWorkflow: ObservableObject {
         snapshot.failureStage = nil
         snapshot.canRetryAcquisition = false
         activeAcquisitionID = nil
+        clearPendingWork()
         snapshot.errorMessage = nil
     }
 
     func reset() {
         activeAcquisitionID = nil
+        clearPendingWork()
         snapshot = Snapshot()
     }
 
     func analyze() async {
         let approvedTranscript = snapshot.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !approvedTranscript.isEmpty else {
-            fail(with: TranscriptLessonWorkflowError.transcriptRequired)
+            fail(with: TranscriptLessonWorkflowError.transcriptRequired, stage: .analysis)
+            return
+        }
+
+        if let pendingLesson, pendingLesson.approvedTranscript == approvedTranscript {
+            await persistPendingLesson(pendingLesson)
             return
         }
 
         snapshot.phase = .analyzing
         snapshot.errorMessage = nil
+        snapshot.failureStage = nil
 
         do {
             let analysis = try await analyzer.analyze(transcript: approvedTranscript)
@@ -245,13 +265,11 @@ final class TranscriptLessonWorkflow: ObservableObject {
                 exercises: analysis.exercises,
                 attempts: []
             )
-            let saved = try await store.saveLesson(draft)
-            snapshot.transcript = approvedTranscript
-            snapshot.lesson = saved
-            snapshot.phase = .ready
+            pendingLesson = draft
+            await persistPendingLesson(draft)
         } catch {
-            snapshot.failureStage = nil
-            fail(with: error)
+            pendingLesson = nil
+            fail(with: error, stage: .analysis)
         }
     }
 
@@ -264,7 +282,7 @@ final class TranscriptLessonWorkflow: ObservableObject {
             snapshot.history = try await store.loadLessonSummaries()
             snapshot.phase = previousPhase == .failed ? .reviewing : previousPhase
         } catch {
-            fail(with: error)
+            fail(with: error, stage: .persistence)
         }
     }
 
@@ -276,9 +294,11 @@ final class TranscriptLessonWorkflow: ObservableObject {
             let lesson = try await store.loadLesson(id: id)
             snapshot.transcript = lesson.approvedTranscript
             snapshot.lesson = lesson
+            clearPendingWork()
+            snapshot.failureStage = nil
             snapshot.phase = .ready
         } catch {
-            fail(with: error)
+            fail(with: error, stage: .persistence)
         }
     }
 
@@ -302,28 +322,42 @@ final class TranscriptLessonWorkflow: ObservableObject {
         snapshot.errorMessage = nil
         defer { snapshot.evaluatingExerciseIDs.remove(exerciseID) }
 
-        do {
-            let feedback = try await analyzer.evaluate(
+        let attempt: ExerciseAttempt
+        if let pending = pendingAttempts[exerciseID], pending.answer == trimmedAnswer {
+            attempt = pending
+        } else {
+            do {
+                let feedback = try await analyzer.evaluate(
                 ExerciseEvaluationRequest(
                     transcript: lesson.approvedTranscript,
                     item: item,
                     exercise: exercise,
                     answer: trimmedAnswer
                 )
-            )
-            let savedAttempt = try await store.saveAttempt(
-                ExerciseAttempt(
+                )
+                attempt = ExerciseAttempt(
                     id: nil,
                     exerciseID: exerciseID,
                     answer: trimmedAnswer,
                     feedback: feedback,
                     createdAt: nil
-                ),
-                lessonID: lessonID
-            )
+                )
+                pendingAttempts[exerciseID] = attempt
+            } catch {
+                snapshot.failureStage = .analysis
+                snapshot.errorMessage = error.localizedDescription
+                return
+            }
+        }
+
+        do {
+            let savedAttempt = try await store.saveAttempt(attempt, lessonID: lessonID)
+            pendingAttempts.removeValue(forKey: exerciseID)
             lesson.attempts.append(savedAttempt)
             snapshot.lesson = lesson
+            snapshot.failureStage = nil
         } catch {
+            snapshot.failureStage = .persistence
             snapshot.errorMessage = error.localizedDescription
         }
     }
@@ -347,21 +381,47 @@ final class TranscriptLessonWorkflow: ObservableObject {
         snapshot.errorMessage = nil
         defer { snapshot.exportingItemIDs.remove(itemID) }
         do {
-            let note = AnkiNoteMapping.naturalEnglish(
-                item: lesson.items[index],
-                sourceURL: lesson.sourceURL,
-                deduplicationTag: ankiDeduplicationTag(lessonID: lessonID, itemID: itemID)
-            )
-            let noteID = try await ankiWriter.write(note)
+            let noteID: Int64
+            if let pendingNoteID = pendingExportNoteIDs[itemID] {
+                noteID = pendingNoteID
+            } else {
+                let note = AnkiNoteMapping.naturalEnglish(
+                    item: lesson.items[index],
+                    sourceURL: lesson.sourceURL,
+                    deduplicationTag: ankiDeduplicationTag(lessonID: lessonID, itemID: itemID)
+                )
+                noteID = try await ankiWriter.write(note)
+                pendingExportNoteIDs[itemID] = noteID
+            }
             do {
                 try await store.saveAnkiExport(noteID: noteID, itemID: itemID, lessonID: lessonID)
+                pendingExportNoteIDs.removeValue(forKey: itemID)
                 lesson.items[index].ankiNoteID = noteID
                 snapshot.lesson = lesson
+                snapshot.failureStage = nil
             } catch {
+                snapshot.failureStage = .persistence
                 snapshot.errorMessage = "Anki created note \(noteID), but its export state could not be saved: \(error.localizedDescription)"
             }
         } catch {
+            snapshot.failureStage = .anki
             snapshot.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func persistPendingLesson(_ lesson: TranscriptLesson) async {
+        snapshot.phase = .analyzing
+        snapshot.errorMessage = nil
+        snapshot.failureStage = nil
+        do {
+            let saved = try await store.saveLesson(lesson)
+            pendingLesson = nil
+            snapshot.transcript = lesson.approvedTranscript
+            snapshot.lesson = saved
+            snapshot.phase = .ready
+        } catch {
+            pendingLesson = lesson
+            fail(with: error, stage: .persistence)
         }
     }
 
@@ -396,6 +456,7 @@ final class TranscriptLessonWorkflow: ObservableObject {
         snapshot.sourceURL = snapshot.source?.canonicalURL ?? snapshot.sourceURL
         snapshot.transcript = transcript
         snapshot.lesson = nil
+        clearPendingWork()
         snapshot.acquisitionMethod = acquisition.method
         snapshot.phase = .reviewing
         snapshot.errorMessage = nil
@@ -407,7 +468,7 @@ final class TranscriptLessonWorkflow: ObservableObject {
 
     private func failAcquisition(with error: Error) {
         if let failure = error as? TranscriptAcquisitionFailure {
-            snapshot.failureStage = failure.stage
+            snapshot.failureStage = failure.stage == .transcription ? .transcription : .acquisition
             snapshot.canRetryAcquisition = failure.retryable
         } else if error is TranscriptSourceURLError || error is TranscriptLessonWorkflowError {
             snapshot.failureStage = .acquisition
@@ -423,6 +484,12 @@ final class TranscriptLessonWorkflow: ObservableObject {
     private func ankiDeduplicationTag(lessonID: Int64, itemID: String) -> String {
         let exactItemID = itemID.utf8.map { String(format: "%02x", $0) }.joined()
         return "anki_mate_transcript_\(lessonID)_\(exactItemID)"
+    }
+
+    private func clearPendingWork() {
+        pendingLesson = nil
+        pendingAttempts.removeAll()
+        pendingExportNoteIDs.removeAll()
     }
 
     private func validate(_ analysis: TranscriptLessonAnalysis, transcript: String) throws {
@@ -480,8 +547,12 @@ final class TranscriptLessonWorkflow: ObservableObject {
         }
     }
 
-    private func fail(with error: Error) {
+    private func fail(
+        with error: Error,
+        stage: TranscriptLessonFailureStage? = nil
+    ) {
         snapshot.phase = .failed
+        if let stage { snapshot.failureStage = stage }
         snapshot.errorMessage = error.localizedDescription
     }
 }

@@ -3,14 +3,14 @@ import Testing
 @testable import AnkiImporter
 
 @MainActor
-@Suite
+@Suite(.serialized)
 struct AnkiConnectClientTests {
     @Test
     func genericWriterChecksModelAndFieldsCreatesDeckAndParsesNoteID() async throws {
         var actions: [String] = []
         var addedFields: [String: String] = [:]
         MockAnkiURLProtocol.handler = { request in
-            let body = try #require(request.httpBody)
+            let body = try Self.body(for: request)
             let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
             let action = try #require(payload["action"] as? String)
             actions.append(action)
@@ -60,9 +60,8 @@ struct AnkiConnectClientTests {
     @Test
     func missingNaturalEnglishSetupProducesActionableErrors() async {
         MockAnkiURLProtocol.handler = { request in
-            let payload = try #require(
-                JSONSerialization.jsonObject(with: try #require(request.httpBody)) as? [String: Any]
-            )
+            let body = try Self.body(for: request)
+            let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
             let action = try #require(payload["action"] as? String)
             let result: Any = action == "version" ? 6 : []
             return Self.response(for: request, result: result)
@@ -95,9 +94,8 @@ struct AnkiConnectClientTests {
     func transportReturnsExistingNoteForTheSameExportTag() async throws {
         var actions: [String] = []
         MockAnkiURLProtocol.handler = { request in
-            let payload = try #require(
-                JSONSerialization.jsonObject(with: try #require(request.httpBody)) as? [String: Any]
-            )
+            let body = try Self.body(for: request)
+            let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
             let action = try #require(payload["action"] as? String)
             actions.append(action)
             let result: Any
@@ -138,6 +136,23 @@ struct AnkiConnectClientTests {
         )!
         let body = try! JSONSerialization.data(withJSONObject: ["result": result, "error": NSNull()])
         return (response, body)
+    }
+
+    nonisolated private static func body(for request: URLRequest) throws -> Data {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { throw URLError(.cannotDecodeContentData) }
+        stream.open()
+        defer { stream.close() }
+
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4_096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count >= 0 else { throw stream.streamError ?? URLError(.cannotDecodeContentData) }
+            if count == 0 { break }
+            data.append(buffer, count: count)
+        }
+        return data
     }
 }
 
