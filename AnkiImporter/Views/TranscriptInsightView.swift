@@ -94,17 +94,30 @@ struct TranscriptInsightView: View {
                 .font(AppTheme.displayFont(size: 20))
                 .foregroundColor(AppTheme.text)
 
-            TextField(
-                "Paste a YouTube or TikTok URL...",
-                text: Binding(
-                    get: { store.enteredURL },
-                    set: { store.send(.urlChanged($0)) }
+            ZStack(alignment: .leading) {
+                if store.enteredURL.isEmpty {
+                    Text("Paste a YouTube or TikTok URL...")
+                        .font(AppTheme.inputFont())
+                        .foregroundColor(AppTheme.text.opacity(0.85))
+                        .allowsHitTesting(false)
+                }
+
+                TextField(
+                    "",
+                    text: Binding(
+                        get: { store.enteredURL },
+                        set: { store.send(.urlChanged($0)) }
+                    )
                 )
-            )
-            .font(AppTheme.inputFont())
-            .foregroundStyle(AppTheme.text)
-            .tint(AppTheme.primary)
-            .textFieldStyle(.plain)
+                .font(AppTheme.inputFont())
+                .foregroundStyle(AppTheme.text)
+                .tint(AppTheme.primary)
+                .textFieldStyle(.plain)
+                .disabled(store.isURLLocked)
+                .focused($isURLFieldFocused)
+                .onSubmit { store.send(.submitFromKeyboard) }
+                .accessibilityLabel("YouTube or TikTok video URL")
+            }
             .padding(16)
             .background(AppTheme.background)
             .overlay(
@@ -112,10 +125,6 @@ struct TranscriptInsightView: View {
                     .stroke(AppTheme.primary, lineWidth: 4)
                     .allowsHitTesting(false)
             )
-            .disabled(store.isURLLocked)
-            .focused($isURLFieldFocused)
-            .onSubmit { store.send(.submitFromKeyboard) }
-            .accessibilityLabel("YouTube or TikTok video URL")
 
             if let message = store.validationMessage {
                 Text(message)

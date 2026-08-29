@@ -7,12 +7,12 @@ struct HomeView: View {
         Feature(
             id: .boostVocab,
             name: "BoostVocab",
-            imageURL: "https://images.unsplash.com/photo-1588912914017-923900a34710?w=800"
+            image: .remote("https://images.unsplash.com/photo-1588912914017-923900a34710?w=800")
         ),
         Feature(
             id: .transcriptInsight,
             name: "Transcript Insight",
-            imageURL: "https://images.unsplash.com/photo-1536240478700-b869070f9279?w=800"
+            image: .bundled("TranscriptInsightFeature")
         )
     ]
 
@@ -75,20 +75,7 @@ struct FeatureCard: View {
     var body: some View {
         Button(action: onClick) {
             VStack(spacing: 24) {
-                AsyncImage(url: URL(string: feature.imageURL)) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        AppTheme.background
-                            .overlay(
-                                ProgressView()
-                                    .tint(AppTheme.primary)
-                            )
-                    }
-                }
+                featureImage
                 .frame(height: 192)
                 .frame(maxWidth: .infinity)
                 .clipped()
@@ -116,6 +103,38 @@ struct FeatureCard: View {
         .buttonStyle(PlainButtonStyle())
         .onHover { hovering in
             isHovered = hovering
+        }
+    }
+
+    @ViewBuilder
+    private var featureImage: some View {
+        switch feature.image {
+        case .bundled(let name):
+            Image(name, bundle: .module)
+                .resizable()
+                .scaledToFill()
+        case .remote(let url):
+            AsyncImage(url: URL(string: url)) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure:
+                    AppTheme.background
+                        .overlay {
+                            Image(systemName: "photo")
+                                .font(.system(size: 36))
+                                .foregroundColor(AppTheme.primary)
+                        }
+                default:
+                    AppTheme.background
+                        .overlay {
+                            ProgressView()
+                                .tint(AppTheme.primary)
+                        }
+                }
+            }
         }
     }
 }

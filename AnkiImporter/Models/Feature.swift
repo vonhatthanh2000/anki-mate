@@ -8,5 +8,10 @@ enum FeatureID: String {
 struct Feature: Identifiable {
     let id: FeatureID
     let name: String
-    let imageURL: String
+    let image: FeatureImage
+}
+
+enum FeatureImage {
+    case bundled(String)
+    case remote(String)
 }
