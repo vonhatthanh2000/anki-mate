@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct HomeView: View {
@@ -110,9 +111,14 @@ struct FeatureCard: View {
     private var featureImage: some View {
         switch feature.image {
         case .bundled(let name):
-            Image(name, bundle: .module)
-                .resizable()
-                .scaledToFill()
+            if let url = Bundle.module.url(forResource: name, withExtension: "png"),
+               let image = NSImage(contentsOf: url) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                missingImage
+            }
         case .remote(let url):
             AsyncImage(url: URL(string: url)) { phase in
                 switch phase {
@@ -136,5 +142,14 @@ struct FeatureCard: View {
                 }
             }
         }
+    }
+
+    private var missingImage: some View {
+        AppTheme.background
+            .overlay {
+                Image(systemName: "photo")
+                    .font(.system(size: 36))
+                    .foregroundColor(AppTheme.primary)
+            }
     }
 }
