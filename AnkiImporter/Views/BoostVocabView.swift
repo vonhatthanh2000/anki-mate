@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct BoostVocabView: View {
-    @Binding var selectedFeature: String?
+    @Binding var selectedFeature: FeatureID?
     @State private var wordPairs: [WordPair] = []
     @State private var currentWord: String = ""
     @State private var currentMeaning: String = ""

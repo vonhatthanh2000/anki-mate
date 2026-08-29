@@ -13,10 +13,21 @@ let package = Package(
         )
     ],
     targets: [
+        .target(
+            name: "TranscriptInsightCore",
+            path: "AnkiImporter/TranscriptInsightCore"
+        ),
         .executableTarget(
             name: "AnkiImporter",
+            dependencies: ["TranscriptInsightCore"],
             path: "AnkiImporter",
-            exclude: ["Info.plist"]
+            exclude: ["Info.plist", "TranscriptInsightCore"],
+            resources: [.process("Resources")]
+        ),
+        .executableTarget(
+            name: "TranscriptInsightChecks",
+            dependencies: ["TranscriptInsightCore"],
+            path: "Tests/TranscriptInsightChecks"
         )
     ]
 )

@@ -1,13 +1,19 @@
+import AppKit
 import SwiftUI
 
 struct HomeView: View {
-    @Binding var selectedFeature: String?
+    @Binding var selectedFeature: FeatureID?
 
     let features = [
         Feature(
-            id: "boost-vocab",
+            id: .boostVocab,
             name: "BoostVocab",
-            imageURL: "https://images.unsplash.com/photo-1588912914017-923900a34710?w=800"
+            image: .remote("https://images.unsplash.com/photo-1588912914017-923900a34710?w=800")
+        ),
+        Feature(
+            id: .transcriptInsight,
+            name: "Transcript Insight",
+            image: .bundled("TranscriptInsightFeature")
         )
     ]
 
@@ -37,14 +43,20 @@ struct HomeView: View {
                 )
 
                 HStack {
-                    LazyVGrid(columns: [GridItem(.flexible(minimum: 300, maximum: 400))], spacing: 32) {
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(minimum: 300, maximum: 400)),
+                            GridItem(.flexible(minimum: 300, maximum: 400)),
+                        ],
+                        spacing: 32
+                    ) {
                         ForEach(features) { feature in
                             FeatureCard(feature: feature) {
                                 selectedFeature = feature.id
                             }
                         }
                     }
-                    .frame(maxWidth: 400)
+                    .frame(maxWidth: 832)
                     Spacer()
                 }
                 .padding(.horizontal, 32)
@@ -64,20 +76,7 @@ struct FeatureCard: View {
     var body: some View {
         Button(action: onClick) {
             VStack(spacing: 24) {
-                AsyncImage(url: URL(string: feature.imageURL)) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        AppTheme.background
-                            .overlay(
-                                ProgressView()
-                                    .tint(AppTheme.primary)
-                            )
-                    }
-                }
+                featureImage
                 .frame(height: 192)
                 .frame(maxWidth: .infinity)
                 .clipped()
@@ -106,5 +105,51 @@ struct FeatureCard: View {
         .onHover { hovering in
             isHovered = hovering
         }
+    }
+
+    @ViewBuilder
+    private var featureImage: some View {
+        switch feature.image {
+        case .bundled(let name):
+            if let url = Bundle.module.url(forResource: name, withExtension: "png"),
+               let image = NSImage(contentsOf: url) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                missingImage
+            }
+        case .remote(let url):
+            AsyncImage(url: URL(string: url)) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure:
+                    AppTheme.background
+                        .overlay {
+                            Image(systemName: "photo")
+                                .font(.system(size: 36))
+                                .foregroundColor(AppTheme.primary)
+                        }
+                default:
+                    AppTheme.background
+                        .overlay {
+                            ProgressView()
+                                .tint(AppTheme.primary)
+                        }
+                }
+            }
+        }
+    }
+
+    private var missingImage: some View {
+        AppTheme.background
+            .overlay {
+                Image(systemName: "photo")
+                    .font(.system(size: 36))
+                    .foregroundColor(AppTheme.primary)
+            }
     }
 }
