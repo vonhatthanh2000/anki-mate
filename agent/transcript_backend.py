@@ -7,12 +7,14 @@ the macOS client can expose the fallback phase before any media is downloaded.
 from __future__ import annotations
 
 import html
+import importlib.util
 import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
@@ -311,13 +313,47 @@ def _choose_format(formats: Sequence[dict[str, Any]]) -> Optional[dict[str, Any]
     return min(candidates, key=lambda item: priorities.get(item.get("ext", ""), 99), default=None)
 
 
+def _youtube_javascript_options(url: str) -> dict[str, Any]:
+    host = urllib.parse.urlparse(url).hostname or ""
+    if host.lower() not in {"youtu.be", "youtube.com", "www.youtube.com", "m.youtube.com"}:
+        return {}
+
+    runtime = None
+    for name, fallback_paths in (
+        ("deno", ("/opt/homebrew/bin/deno", "/usr/local/bin/deno")),
+        ("node", ("/opt/homebrew/bin/node", "/usr/local/bin/node")),
+    ):
+        executable = shutil.which(name) or next(
+            (path for path in fallback_paths if Path(path).is_file()),
+            None,
+        )
+        if executable:
+            runtime = (name, executable)
+            break
+
+    if not runtime:
+        raise BackendError(
+            "backend_unavailable",
+            "YouTube processing requires Node.js 22+ or Deno 2.3+. Install one and try again.",
+        )
+
+    name, executable = runtime
+    options: dict[str, Any] = {"js_runtimes": {name: {"path": executable}}}
+    if importlib.util.find_spec("yt_dlp_ejs") is None:
+        options["remote_components"] = ["ejs:github"]
+    return options
+
+
 def _default_extract_info(url: str) -> dict[str, Any]:
     try:
         import yt_dlp
 
         options = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True}
+        options.update(_youtube_javascript_options(url))
         with yt_dlp.YoutubeDL(options) as downloader:
             return downloader.extract_info(url, download=False)
+    except BackendError:
+        raise
     except Exception as error:
         raise classify_platform_error(error) from error
 
@@ -410,6 +446,7 @@ def _default_media_acquirer(exact_url: str, directory: Path) -> Path:
             "retries": 2,
             "fragment_retries": 2,
         }
+        options.update(_youtube_javascript_options(exact_url))
         with yt_dlp.YoutubeDL(options) as downloader:
             info = downloader.extract_info(exact_url, download=True)
             requested = info.get("requested_downloads") or []

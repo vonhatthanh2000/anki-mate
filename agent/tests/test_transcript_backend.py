@@ -16,12 +16,29 @@ from transcript_backend import (
     PunctuationRestorer,
     SpeechToTextFallback,
     _default_audio_extractor,
+    _youtube_javascript_options,
     parse_caption_payload,
     sentences_from_cues,
 )
 
 
 class CaptionAcquirerTests(unittest.TestCase):
+    @patch("transcript_backend.importlib.util.find_spec", return_value=None)
+    @patch("transcript_backend.shutil.which")
+    def test_configures_youtube_javascript_runtime_and_solver(self, which, _find_spec):
+        which.side_effect = lambda name: "/usr/local/bin/node" if name == "node" else None
+
+        options = _youtube_javascript_options("https://www.youtube.com/watch?v=valid")
+
+        self.assertEqual(options["js_runtimes"], {"node": {"path": "/usr/local/bin/node"}})
+        self.assertEqual(options["remote_components"], ["ejs:github"])
+
+    @patch("transcript_backend.shutil.which", return_value=None)
+    @patch("transcript_backend.Path.is_file", return_value=False)
+    def test_reports_missing_youtube_javascript_runtime(self, _is_file, _which):
+        with self.assertRaisesRegex(BackendError, r"requires Node.js 22\+ or Deno 2.3\+"):
+            _youtube_javascript_options("https://youtu.be/valid")
+
     def test_uses_exact_url_prefers_english_and_classifies_youtube(self):
         requested = []
         downloaded = []

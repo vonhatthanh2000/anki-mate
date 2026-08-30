@@ -34,6 +34,8 @@ and the OpenAI transcription API when usable English captions are unavailable. L
 sentence punctuation are restored with `gpt-4o-mini`; the result is accepted only when every original spoken
 word is preserved in order. Install the Python dependencies with `pip install -r agent/requirements.txt`;
 speech-to-text and AI punctuation require `OPENAI_API_KEY`, and speech-to-text also requires `ffmpeg`.
+Current YouTube extraction also requires Node.js 22+ or Deno 2.3+ so `yt-dlp` can solve YouTube's JavaScript
+challenges. Installing `agent/requirements.txt` includes yt-dlp's matching EJS solver package.
 
 Set `TRANSCRIPT_PUNCTUATION_MODE=local` to use only local length heuristics, or `off` to disable restoration.
 Override the default punctuation model with `OPENAI_PUNCTUATION_MODEL`.

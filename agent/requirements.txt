@@ -1,4 +1,4 @@
 phidata
 openai
 python-dotenv
-yt-dlp
+yt-dlp[default]
