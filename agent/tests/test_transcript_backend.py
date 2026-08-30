@@ -1,8 +1,10 @@
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -13,6 +15,7 @@ from transcript_backend import (
     Cue,
     PunctuationRestorer,
     SpeechToTextFallback,
+    _default_audio_extractor,
     parse_caption_payload,
     sentences_from_cues,
 )
@@ -159,6 +162,19 @@ Next idea.
 
 
 class SpeechToTextFallbackTests(unittest.TestCase):
+    @patch("transcript_backend.subprocess.run")
+    def test_audio_conversion_cannot_read_from_the_terminal(self, run):
+        root = Path(tempfile.mkdtemp())
+        media = root / "source.mp3"
+        media.write_bytes(b"media")
+
+        _default_audio_extractor(media, root)
+
+        command = run.call_args.args[0]
+        self.assertIn("-nostdin", command)
+        self.assertEqual(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
+        self._remove_tree(root)
+
     def test_reports_each_processing_stage(self):
         root = Path(tempfile.mkdtemp())
         media = root / "source.webm"

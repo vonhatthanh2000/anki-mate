@@ -444,8 +444,21 @@ def _default_audio_extractor(media_path: Path, directory: Path) -> Path:
         raise BackendError("audio_extraction_failed", "ffmpeg is required to prepare audio for transcription.")
     try:
         subprocess.run(
-            [ffmpeg, "-y", "-i", str(media_path), "-vn", "-codec:a", "libmp3lame", "-q:a", "4", str(audio_path)],
+            [
+                ffmpeg,
+                "-nostdin",
+                "-y",
+                "-i",
+                str(media_path),
+                "-vn",
+                "-codec:a",
+                "libmp3lame",
+                "-q:a",
+                "4",
+                str(audio_path),
+            ],
             check=True,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             timeout=float(os.getenv("TRANSCRIPT_AUDIO_TIMEOUT_SECONDS", "60")),
