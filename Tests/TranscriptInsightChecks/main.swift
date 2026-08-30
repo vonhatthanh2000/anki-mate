@@ -105,19 +105,32 @@ struct TranscriptInsightChecks {
                 await fallbackLog.append("captions:\(url.absoluteString)")
                 throw TranscriptBackendFailure(kind: "captions_unavailable", message: "No captions")
             },
-            speechToText: { url in
+            speechToTextWithProgress: { url, progress in
                 await fallbackLog.append("speech:\(url.absoluteString)")
-                try await Task.sleep(nanoseconds: 20_000_000)
+                await progress(.downloadingAudio)
+                try await Task.sleep(nanoseconds: 5_000_000)
+                await progress(.preparingAudio)
+                try await Task.sleep(nanoseconds: 5_000_000)
+                await progress(.transcribingAudio)
+                try await Task.sleep(nanoseconds: 5_000_000)
+                await progress(.formattingTranscript)
+                try await Task.sleep(nanoseconds: 5_000_000)
                 return Transcript(source: .speechToText, sentences: ["Spoken result."])
             }
         )
         let fallbackStore = TranscriptInsightStore(acquisitionClient: fallbackClient)
         fallbackStore.send(.urlChanged("https://youtu.be/fallback"))
         fallbackStore.send(.submit)
-        let fallbackBecameVisible = await waitFor { fallbackStore.phase == .transcribingAudio }
+        let downloadBecameVisible = await waitFor { fallbackStore.phase == .downloadingAudio }
+        let preparingBecameVisible = await waitFor { fallbackStore.phase == .preparingAudio }
+        let transcribingBecameVisible = await waitFor { fallbackStore.phase == .transcribingAudio }
+        let formattingBecameVisible = await waitFor { fallbackStore.phase == .formattingTranscript }
         let fallbackCompleted = await waitFor { fallbackStore.phase == .complete }
         let fallbackCalls = await fallbackLog.values
-        expect(fallbackBecameVisible, "Fallback should expose the transcribing phase")
+        expect(downloadBecameVisible, "Fallback should expose the download phase")
+        expect(preparingBecameVisible, "Fallback should expose the audio preparation phase")
+        expect(transcribingBecameVisible, "Fallback should expose the transcription phase")
+        expect(formattingBecameVisible, "Fallback should expose the formatting phase")
         expect(fallbackCompleted, "Eligible fallback should complete")
         expect(fallbackStore.transcript?.source == .speechToText, "Fallback source should be speech-to-text")
         expect(
@@ -192,7 +205,7 @@ struct TranscriptInsightChecks {
         )
 
         if failures.isEmpty {
-            print("Transcript Insight checks passed (\(supportedURLs.count + 9) scenarios).")
+            print("Transcript Insight checks passed (\(supportedURLs.count + 10) scenarios).")
         } else {
             for failure in failures { fputs("FAIL: \(failure)\n", stderr) }
             exit(1)

@@ -406,6 +406,9 @@ def _default_media_acquirer(exact_url: str, directory: Path) -> Path:
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
+            "socket_timeout": float(os.getenv("TRANSCRIPT_DOWNLOAD_TIMEOUT_SECONDS", "20")),
+            "retries": 2,
+            "fragment_retries": 2,
         }
         with yt_dlp.YoutubeDL(options) as downloader:
             info = downloader.extract_info(exact_url, download=True)
@@ -445,7 +448,10 @@ def _default_audio_extractor(media_path: Path, directory: Path) -> Path:
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
+            timeout=float(os.getenv("TRANSCRIPT_AUDIO_TIMEOUT_SECONDS", "60")),
         )
+    except subprocess.TimeoutExpired as error:
+        raise BackendError("audio_extraction_failed", "Preparing this video’s audio took too long.") from error
     except (OSError, subprocess.CalledProcessError) as error:
         raise BackendError("audio_extraction_failed", "We couldn’t prepare this video’s audio for transcription.") from error
     return audio_path
@@ -456,7 +462,11 @@ def _default_transcriber(audio_path: Path) -> list[Cue]:
         from openai import OpenAI
 
         _load_agent_environment()
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = OpenAI(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            timeout=float(os.getenv("OPENAI_TRANSCRIPTION_TIMEOUT_SECONDS", "120")),
+            max_retries=1,
+        )
         with audio_path.open("rb") as audio:
             response = client.audio.transcriptions.create(
                 model=os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1"),
@@ -499,6 +509,7 @@ class SpeechToTextFallback:
         temporary_directory: Callable[[], Path] = _default_temporary_directory,
         cleanup: Callable[[Path], None] = _default_cleanup,
         punctuation_restorer: Optional[PunctuationRestorer] = None,
+        progress: Optional[Callable[[str], None]] = None,
     ):
         self.media_acquirer = media_acquirer
         self.audio_extractor = audio_extractor
@@ -506,6 +517,13 @@ class SpeechToTextFallback:
         self.temporary_directory = temporary_directory
         self.cleanup = cleanup
         self.punctuation_restorer = punctuation_restorer or PunctuationRestorer()
+        self.progress = progress or (lambda _stage: None)
+
+    def _report(self, stage: str) -> None:
+        try:
+            self.progress(stage)
+        except Exception:
+            pass
 
     def transcribe(self, exact_url: str) -> TranscriptResult:
         try:
@@ -516,13 +534,25 @@ class SpeechToTextFallback:
         primary_error = None
         try:
             try:
-                media_path = self.media_acquirer(exact_url, directory)
+                self._report("downloading_audio")
+                try:
+                    media_path = self.media_acquirer(exact_url, directory)
+                except BackendError as error:
+                    should_retry = (
+                        "tiktok.com" in exact_url.lower()
+                        and error.kind in {"download_failed", "network_failed"}
+                    )
+                    if not should_retry:
+                        raise
+                    self._report("retrying_download")
+                    media_path = self.media_acquirer(exact_url, directory)
             except BackendError:
                 raise
             except Exception as error:
                 raise BackendError("download_failed", "We couldn’t download audio for this video.") from error
 
             try:
+                self._report("preparing_audio")
                 audio_path = self.audio_extractor(media_path, directory)
             except BackendError:
                 raise
@@ -532,12 +562,14 @@ class SpeechToTextFallback:
                 ) from error
 
             try:
+                self._report("transcribing_audio")
                 cues = self.transcriber(audio_path)
             except BackendError:
                 raise
             except Exception as error:
                 raise BackendError("transcription_failed", "We couldn’t transcribe this video. Try again.") from error
 
+            self._report("formatting_transcript")
             sentences = self.punctuation_restorer.restore(cues)
             if not sentences:
                 raise BackendError("transcription_failed", "Speech-to-text returned an empty transcript.")

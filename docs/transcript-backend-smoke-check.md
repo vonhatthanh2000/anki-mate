@@ -37,3 +37,7 @@ agent/.venv/bin/python3 agent/transcript_cli.py transcribe "VIDEO_URL"
 Confirm that the result reports `speech_to_text`, sentence order matches the audio, and no
 `anki-mate-transcript-*` directory remains in the system temporary directory afterward. Also exercise an
 inaccessible/private URL and confirm it returns an actionable error without an incorrect transcript.
+
+In the app, confirm the status advances through **Downloading audio**, **Preparing audio**,
+**Uploading and transcribing**, and **Formatting transcript**. A transient TikTok extraction failure should show
+the retry status once before either continuing or returning an actionable error.

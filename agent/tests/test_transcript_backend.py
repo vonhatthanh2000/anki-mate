@@ -159,6 +159,55 @@ Next idea.
 
 
 class SpeechToTextFallbackTests(unittest.TestCase):
+    def test_reports_each_processing_stage(self):
+        root = Path(tempfile.mkdtemp())
+        media = root / "source.webm"
+        audio = root / "audio.mp3"
+        stages = []
+        fallback = SpeechToTextFallback(
+            media_acquirer=lambda _url, _directory: (media.write_bytes(b"media"), media)[1],
+            audio_extractor=lambda _media, _directory: (audio.write_bytes(b"audio"), audio)[1],
+            transcriber=lambda _audio: [Cue("A complete sentence.", 0, 1)],
+            temporary_directory=lambda: root,
+            cleanup=self._remove_tree,
+            progress=stages.append,
+        )
+
+        fallback.transcribe("https://youtu.be/progress")
+
+        self.assertEqual(
+            stages,
+            ["downloading_audio", "preparing_audio", "transcribing_audio", "formatting_transcript"],
+        )
+
+    def test_retries_one_transient_tiktok_download(self):
+        root = Path(tempfile.mkdtemp())
+        media = root / "source.mp4"
+        audio = root / "audio.mp3"
+        attempts = []
+        stages = []
+
+        def acquire(_url, _directory):
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise BackendError("download_failed", "TikTok challenge changed")
+            media.write_bytes(b"media")
+            return media
+
+        fallback = SpeechToTextFallback(
+            media_acquirer=acquire,
+            audio_extractor=lambda _media, _directory: (audio.write_bytes(b"audio"), audio)[1],
+            transcriber=lambda _audio: [Cue("A complete sentence.", 0, 1)],
+            temporary_directory=lambda: root,
+            cleanup=self._remove_tree,
+            progress=stages.append,
+        )
+
+        fallback.transcribe("https://www.tiktok.com/@creator/video/123")
+
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(stages[:2], ["downloading_audio", "retrying_download"])
+
     def test_propagates_exact_url_and_cleans_all_temporary_files(self):
         calls = []
         root = Path(tempfile.mkdtemp())

@@ -38,6 +38,11 @@ speech-to-text and AI punctuation require `OPENAI_API_KEY`, and speech-to-text a
 Set `TRANSCRIPT_PUNCTUATION_MODE=local` to use only local length heuristics, or `off` to disable restoration.
 Override the default punctuation model with `OPENAI_PUNCTUATION_MODEL`.
 
+Speech-to-text reports its live download, audio preparation, transcription, and formatting stages. Slow work is
+bounded by `TRANSCRIPT_DOWNLOAD_TIMEOUT_SECONDS` (default `20`), `TRANSCRIPT_AUDIO_TIMEOUT_SECONDS` (default
+`60`), `OPENAI_TRANSCRIPTION_TIMEOUT_SECONDS` (default `120`), and the overall
+`TRANSCRIPT_PROCESS_TIMEOUT_SECONDS` (default `180`). Transient TikTok download failures are retried once.
+
 ## Quick Start
 
 ### Option 1: Build & Run App Bundle

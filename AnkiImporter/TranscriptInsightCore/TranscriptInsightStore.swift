@@ -5,9 +5,21 @@ public enum TranscriptInsightPhase: Equatable, Sendable {
     case empty
     case invalidURL(message: String)
     case checkingTranscript
+    case downloadingAudio
+    case retryingDownload
+    case preparingAudio
     case transcribingAudio
+    case formattingTranscript
     case complete
     case transcriptFailed(message: String)
+}
+
+public enum TranscriptAcquisitionProgress: String, Equatable, Sendable {
+    case downloadingAudio = "downloading_audio"
+    case retryingDownload = "retrying_download"
+    case preparingAudio = "preparing_audio"
+    case transcribingAudio = "transcribing_audio"
+    case formattingTranscript = "formatting_transcript"
 }
 
 public enum TranscriptInsightAction: Equatable, Sendable {
@@ -59,14 +71,28 @@ public struct TranscriptBackendFailure: Error, Equatable, Sendable {
 
 public struct TranscriptAcquisitionClient: Sendable {
     public let captions: @Sendable (URL) async throws -> Transcript
-    public let speechToText: @Sendable (URL) async throws -> Transcript
+    public let speechToText: @Sendable (
+        URL,
+        @escaping @Sendable (TranscriptAcquisitionProgress) async -> Void
+    ) async throws -> Transcript
 
     public init(
         captions: @escaping @Sendable (URL) async throws -> Transcript,
         speechToText: @escaping @Sendable (URL) async throws -> Transcript
     ) {
         self.captions = captions
-        self.speechToText = speechToText
+        self.speechToText = { url, _ in try await speechToText(url) }
+    }
+
+    public init(
+        captions: @escaping @Sendable (URL) async throws -> Transcript,
+        speechToTextWithProgress: @escaping @Sendable (
+            URL,
+            @escaping @Sendable (TranscriptAcquisitionProgress) async -> Void
+        ) async throws -> Transcript
+    ) {
+        self.captions = captions
+        self.speechToText = speechToTextWithProgress
     }
 }
 
@@ -105,7 +131,13 @@ public final class TranscriptInsightStore: ObservableObject {
     }
 
     public var isURLLocked: Bool {
-        phase == .checkingTranscript || phase == .transcribingAudio
+        switch phase {
+        case .checkingTranscript, .downloadingAudio, .retryingDownload, .preparingAudio,
+             .transcribingAudio, .formattingTranscript:
+            return true
+        default:
+            return false
+        }
     }
 
     public var validationMessage: String? {
@@ -116,7 +148,11 @@ public final class TranscriptInsightStore: ObservableObject {
     public var processingStatus: String? {
         switch phase {
         case .checkingTranscript: return "Checking for transcript..."
-        case .transcribingAudio: return "Transcribing audio..."
+        case .downloadingAudio: return "Downloading audio..."
+        case .retryingDownload: return "TikTok changed its response. Retrying download..."
+        case .preparingAudio: return "Preparing audio..."
+        case .transcribingAudio: return "Uploading and transcribing..."
+        case .formattingTranscript: return "Formatting transcript..."
         default: return nil
         }
     }
@@ -160,9 +196,12 @@ public final class TranscriptInsightStore: ObservableObject {
                 phase = .complete
             } catch let failure as TranscriptBackendFailure where failure.permitsSpeechToTextFallback {
                 guard !Task.isCancelled else { return }
-                phase = .transcribingAudio
+                phase = .downloadingAudio
                 do {
-                    let result = try await acquisitionClient.speechToText(url)
+                    let result = try await acquisitionClient.speechToText(url) { [weak self] progress in
+                        guard !Task.isCancelled else { return }
+                        await self?.show(progress)
+                    }
                     guard !Task.isCancelled else { return }
                     transcript = result
                     phase = .complete
@@ -174,6 +213,16 @@ public final class TranscriptInsightStore: ObservableObject {
                 guard !Task.isCancelled else { return }
                 phase = .transcriptFailed(message: Self.message(for: error))
             }
+        }
+    }
+
+    private func show(_ progress: TranscriptAcquisitionProgress) {
+        switch progress {
+        case .downloadingAudio: phase = .downloadingAudio
+        case .retryingDownload: phase = .retryingDownload
+        case .preparingAudio: phase = .preparingAudio
+        case .transcribingAudio: phase = .transcribingAudio
+        case .formattingTranscript: phase = .formattingTranscript
         }
     }
 
