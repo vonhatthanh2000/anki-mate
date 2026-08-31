@@ -7,12 +7,14 @@ the macOS client can expose the fallback phase before any media is downloaded.
 from __future__ import annotations
 
 import html
+import importlib.util
 import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
@@ -311,13 +313,47 @@ def _choose_format(formats: Sequence[dict[str, Any]]) -> Optional[dict[str, Any]
     return min(candidates, key=lambda item: priorities.get(item.get("ext", ""), 99), default=None)
 
 
+def _youtube_javascript_options(url: str) -> dict[str, Any]:
+    host = urllib.parse.urlparse(url).hostname or ""
+    if host.lower() not in {"youtu.be", "youtube.com", "www.youtube.com", "m.youtube.com"}:
+        return {}
+
+    runtime = None
+    for name, fallback_paths in (
+        ("deno", ("/opt/homebrew/bin/deno", "/usr/local/bin/deno")),
+        ("node", ("/opt/homebrew/bin/node", "/usr/local/bin/node")),
+    ):
+        executable = shutil.which(name) or next(
+            (path for path in fallback_paths if Path(path).is_file()),
+            None,
+        )
+        if executable:
+            runtime = (name, executable)
+            break
+
+    if not runtime:
+        raise BackendError(
+            "backend_unavailable",
+            "YouTube processing requires Node.js 22+ or Deno 2.3+. Install one and try again.",
+        )
+
+    name, executable = runtime
+    options: dict[str, Any] = {"js_runtimes": {name: {"path": executable}}}
+    if importlib.util.find_spec("yt_dlp_ejs") is None:
+        options["remote_components"] = ["ejs:github"]
+    return options
+
+
 def _default_extract_info(url: str) -> dict[str, Any]:
     try:
         import yt_dlp
 
         options = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True}
+        options.update(_youtube_javascript_options(url))
         with yt_dlp.YoutubeDL(options) as downloader:
             return downloader.extract_info(url, download=False)
+    except BackendError:
+        raise
     except Exception as error:
         raise classify_platform_error(error) from error
 
@@ -406,7 +442,11 @@ def _default_media_acquirer(exact_url: str, directory: Path) -> Path:
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
+            "socket_timeout": float(os.getenv("TRANSCRIPT_DOWNLOAD_TIMEOUT_SECONDS", "20")),
+            "retries": 2,
+            "fragment_retries": 2,
         }
+        options.update(_youtube_javascript_options(exact_url))
         with yt_dlp.YoutubeDL(options) as downloader:
             info = downloader.extract_info(exact_url, download=True)
             requested = info.get("requested_downloads") or []
@@ -441,11 +481,27 @@ def _default_audio_extractor(media_path: Path, directory: Path) -> Path:
         raise BackendError("audio_extraction_failed", "ffmpeg is required to prepare audio for transcription.")
     try:
         subprocess.run(
-            [ffmpeg, "-y", "-i", str(media_path), "-vn", "-codec:a", "libmp3lame", "-q:a", "4", str(audio_path)],
+            [
+                ffmpeg,
+                "-nostdin",
+                "-y",
+                "-i",
+                str(media_path),
+                "-vn",
+                "-codec:a",
+                "libmp3lame",
+                "-q:a",
+                "4",
+                str(audio_path),
+            ],
             check=True,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
+            timeout=float(os.getenv("TRANSCRIPT_AUDIO_TIMEOUT_SECONDS", "60")),
         )
+    except subprocess.TimeoutExpired as error:
+        raise BackendError("audio_extraction_failed", "Preparing this video’s audio took too long.") from error
     except (OSError, subprocess.CalledProcessError) as error:
         raise BackendError("audio_extraction_failed", "We couldn’t prepare this video’s audio for transcription.") from error
     return audio_path
@@ -456,7 +512,11 @@ def _default_transcriber(audio_path: Path) -> list[Cue]:
         from openai import OpenAI
 
         _load_agent_environment()
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = OpenAI(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            timeout=float(os.getenv("OPENAI_TRANSCRIPTION_TIMEOUT_SECONDS", "120")),
+            max_retries=1,
+        )
         with audio_path.open("rb") as audio:
             response = client.audio.transcriptions.create(
                 model=os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1"),
@@ -499,6 +559,7 @@ class SpeechToTextFallback:
         temporary_directory: Callable[[], Path] = _default_temporary_directory,
         cleanup: Callable[[Path], None] = _default_cleanup,
         punctuation_restorer: Optional[PunctuationRestorer] = None,
+        progress: Optional[Callable[[str], None]] = None,
     ):
         self.media_acquirer = media_acquirer
         self.audio_extractor = audio_extractor
@@ -506,6 +567,13 @@ class SpeechToTextFallback:
         self.temporary_directory = temporary_directory
         self.cleanup = cleanup
         self.punctuation_restorer = punctuation_restorer or PunctuationRestorer()
+        self.progress = progress or (lambda _stage: None)
+
+    def _report(self, stage: str) -> None:
+        try:
+            self.progress(stage)
+        except Exception:
+            pass
 
     def transcribe(self, exact_url: str) -> TranscriptResult:
         try:
@@ -516,13 +584,25 @@ class SpeechToTextFallback:
         primary_error = None
         try:
             try:
-                media_path = self.media_acquirer(exact_url, directory)
+                self._report("downloading_audio")
+                try:
+                    media_path = self.media_acquirer(exact_url, directory)
+                except BackendError as error:
+                    should_retry = (
+                        "tiktok.com" in exact_url.lower()
+                        and error.kind in {"download_failed", "network_failed"}
+                    )
+                    if not should_retry:
+                        raise
+                    self._report("retrying_download")
+                    media_path = self.media_acquirer(exact_url, directory)
             except BackendError:
                 raise
             except Exception as error:
                 raise BackendError("download_failed", "We couldn’t download audio for this video.") from error
 
             try:
+                self._report("preparing_audio")
                 audio_path = self.audio_extractor(media_path, directory)
             except BackendError:
                 raise
@@ -532,12 +612,14 @@ class SpeechToTextFallback:
                 ) from error
 
             try:
+                self._report("transcribing_audio")
                 cues = self.transcriber(audio_path)
             except BackendError:
                 raise
             except Exception as error:
                 raise BackendError("transcription_failed", "We couldn’t transcribe this video. Try again.") from error
 
+            self._report("formatting_transcript")
             sentences = self.punctuation_restorer.restore(cues)
             if not sentences:
                 raise BackendError("transcription_failed", "Speech-to-text returned an empty transcript.")

@@ -12,7 +12,7 @@ struct TranscriptInsightView: View {
     init(selectedFeature: Binding<FeatureID?>) {
         _selectedFeature = selectedFeature
         _store = StateObject(
-            wrappedValue: TranscriptInsightStore(acquisitionClient: PythonTranscriptBackend.live)
+            wrappedValue: TranscriptInsightStore(acquisitionClient: TranscriptBackend.live)
         )
     }
 
@@ -96,7 +96,7 @@ struct TranscriptInsightView: View {
 
             ZStack(alignment: .leading) {
                 if store.enteredURL.isEmpty {
-                    Text("Paste a YouTube or TikTok URL...")
+                    Text("Paste a YouTube, TikTok, or Instagram URL...")
                         .font(AppTheme.inputFont())
                         .foregroundColor(AppTheme.text.opacity(0.85))
                         .allowsHitTesting(false)
@@ -116,7 +116,7 @@ struct TranscriptInsightView: View {
                 .disabled(store.isURLLocked)
                 .focused($isURLFieldFocused)
                 .onSubmit { store.send(.submitFromKeyboard) }
-                .accessibilityLabel("YouTube or TikTok video URL")
+                .accessibilityLabel("YouTube, TikTok, or Instagram video URL")
             }
             .padding(16)
             .background(AppTheme.background)
@@ -125,6 +125,10 @@ struct TranscriptInsightView: View {
                     .stroke(AppTheme.primary, lineWidth: 4)
                     .allowsHitTesting(false)
             )
+
+            Text(TranscriptBackend.providerDescription)
+                .font(AppTheme.inputFont(size: 13))
+                .foregroundColor(AppTheme.text.opacity(0.8))
 
             if let message = store.validationMessage {
                 Text(message)
@@ -348,7 +352,7 @@ struct TranscriptInsightView_Previews: PreviewProvider {
             TranscriptInsightPreview(
                 enteredURL: "https://www.tiktok.com/@creator/video/123",
                 phase: .complete,
-                transcript: Transcript(source: .speechToText, sentences: ["Speech-to-text fallback result."])
+                transcript: Transcript(source: .speechToText, sentences: ["Speech-to-text result."])
             )
             .previewDisplayName("Speech-to-text")
             TranscriptInsightPreview(

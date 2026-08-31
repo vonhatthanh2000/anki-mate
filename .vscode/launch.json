@@ -1,24 +1,44 @@
 {
-    "configurations": [
-        {
-            "type": "swift",
-            "request": "launch",
-            "args": [],
-            "cwd": "${workspaceFolder:anki-mate}",
-            "name": "Debug AnkiImporter",
-            "target": "AnkiImporter",
-            "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug AnkiImporter"
-        },
-        {
-            "type": "swift",
-            "request": "launch",
-            "args": [],
-            "cwd": "${workspaceFolder:anki-mate}",
-            "name": "Release AnkiImporter",
-            "target": "AnkiImporter",
-            "configuration": "release",
-            "preLaunchTask": "swift: Build Release AnkiImporter"
-        }
-    ]
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:anki-mate}",
+      "name": "Debug AnkiImporter",
+      "target": "AnkiImporter",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug AnkiImporter"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:anki-mate}",
+      "name": "Release AnkiImporter",
+      "target": "AnkiImporter",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release AnkiImporter"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:anki-mate}",
+      "name": "Debug TranscriptInsightChecks",
+      "target": "TranscriptInsightChecks",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug TranscriptInsightChecks"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:anki-mate}",
+      "name": "Release TranscriptInsightChecks",
+      "target": "TranscriptInsightChecks",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release TranscriptInsightChecks"
+    }
+  ]
 }

@@ -7,6 +7,10 @@ import sys
 from transcript_backend import BackendError, CaptionAcquirer, SpeechToTextFallback
 
 
+def emit_progress(stage):
+    print(f"ANKI_MATE_PROGRESS:{json.dumps({'stage': stage})}", file=sys.stderr, flush=True)
+
+
 def main():
     if len(sys.argv) != 3 or sys.argv[1] not in {"captions", "transcribe"}:
         print(json.dumps({"ok": False, "error": {"kind": "usage", "message": "Usage: transcript_cli.py <captions|transcribe> <url>"}}))
@@ -14,7 +18,11 @@ def main():
 
     mode, exact_url = sys.argv[1:]
     try:
-        result = CaptionAcquirer().acquire(exact_url) if mode == "captions" else SpeechToTextFallback().transcribe(exact_url)
+        result = (
+            CaptionAcquirer().acquire(exact_url)
+            if mode == "captions"
+            else SpeechToTextFallback(progress=emit_progress).transcribe(exact_url)
+        )
         print(
             json.dumps(
                 {

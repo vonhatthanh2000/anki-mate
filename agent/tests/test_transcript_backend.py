@@ -1,8 +1,10 @@
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -13,12 +15,30 @@ from transcript_backend import (
     Cue,
     PunctuationRestorer,
     SpeechToTextFallback,
+    _default_audio_extractor,
+    _youtube_javascript_options,
     parse_caption_payload,
     sentences_from_cues,
 )
 
 
 class CaptionAcquirerTests(unittest.TestCase):
+    @patch("transcript_backend.importlib.util.find_spec", return_value=None)
+    @patch("transcript_backend.shutil.which")
+    def test_configures_youtube_javascript_runtime_and_solver(self, which, _find_spec):
+        which.side_effect = lambda name: "/usr/local/bin/node" if name == "node" else None
+
+        options = _youtube_javascript_options("https://www.youtube.com/watch?v=valid")
+
+        self.assertEqual(options["js_runtimes"], {"node": {"path": "/usr/local/bin/node"}})
+        self.assertEqual(options["remote_components"], ["ejs:github"])
+
+    @patch("transcript_backend.shutil.which", return_value=None)
+    @patch("transcript_backend.Path.is_file", return_value=False)
+    def test_reports_missing_youtube_javascript_runtime(self, _is_file, _which):
+        with self.assertRaisesRegex(BackendError, r"requires Node.js 22\+ or Deno 2.3\+"):
+            _youtube_javascript_options("https://youtu.be/valid")
+
     def test_uses_exact_url_prefers_english_and_classifies_youtube(self):
         requested = []
         downloaded = []
@@ -159,6 +179,68 @@ Next idea.
 
 
 class SpeechToTextFallbackTests(unittest.TestCase):
+    @patch("transcript_backend.subprocess.run")
+    def test_audio_conversion_cannot_read_from_the_terminal(self, run):
+        root = Path(tempfile.mkdtemp())
+        media = root / "source.mp3"
+        media.write_bytes(b"media")
+
+        _default_audio_extractor(media, root)
+
+        command = run.call_args.args[0]
+        self.assertIn("-nostdin", command)
+        self.assertEqual(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
+        self._remove_tree(root)
+
+    def test_reports_each_processing_stage(self):
+        root = Path(tempfile.mkdtemp())
+        media = root / "source.webm"
+        audio = root / "audio.mp3"
+        stages = []
+        fallback = SpeechToTextFallback(
+            media_acquirer=lambda _url, _directory: (media.write_bytes(b"media"), media)[1],
+            audio_extractor=lambda _media, _directory: (audio.write_bytes(b"audio"), audio)[1],
+            transcriber=lambda _audio: [Cue("A complete sentence.", 0, 1)],
+            temporary_directory=lambda: root,
+            cleanup=self._remove_tree,
+            progress=stages.append,
+        )
+
+        fallback.transcribe("https://youtu.be/progress")
+
+        self.assertEqual(
+            stages,
+            ["downloading_audio", "preparing_audio", "transcribing_audio", "formatting_transcript"],
+        )
+
+    def test_retries_one_transient_tiktok_download(self):
+        root = Path(tempfile.mkdtemp())
+        media = root / "source.mp4"
+        audio = root / "audio.mp3"
+        attempts = []
+        stages = []
+
+        def acquire(_url, _directory):
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise BackendError("download_failed", "TikTok challenge changed")
+            media.write_bytes(b"media")
+            return media
+
+        fallback = SpeechToTextFallback(
+            media_acquirer=acquire,
+            audio_extractor=lambda _media, _directory: (audio.write_bytes(b"audio"), audio)[1],
+            transcriber=lambda _audio: [Cue("A complete sentence.", 0, 1)],
+            temporary_directory=lambda: root,
+            cleanup=self._remove_tree,
+            progress=stages.append,
+        )
+
+        fallback.transcribe("https://www.tiktok.com/@creator/video/123")
+
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(stages[:2], ["downloading_audio", "retrying_download"])
+
     def test_propagates_exact_url_and_cleans_all_temporary_files(self):
         calls = []
         root = Path(tempfile.mkdtemp())

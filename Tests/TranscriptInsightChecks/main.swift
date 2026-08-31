@@ -33,7 +33,7 @@ struct TranscriptInsightChecks {
         )
         invalid.send(.urlChanged("https://example.com/watch?v=abc"))
         expect(
-            invalid.phase == .invalidURL(message: "Use a YouTube or TikTok link."),
+            invalid.phase == .invalidURL(message: "Use a YouTube, TikTok, or Instagram link."),
             "Unsupported hosts should have host guidance"
         )
 
@@ -43,6 +43,7 @@ struct TranscriptInsightChecks {
             "https://www.youtube.com/shorts/dQw4w9WgXcQ",
             "https://www.tiktok.com/@creator/video/7420000000000000000",
             "https://vm.tiktok.com/ZMexample/",
+            "https://www.instagram.com/reel/example/",
         ]
         for input in supportedURLs {
             let store = TranscriptInsightStore()
@@ -78,91 +79,89 @@ struct TranscriptInsightChecks {
 
         let captionLog = CallLog()
         let captionClient = TranscriptAcquisitionClient(
-            captions: { url in
-                await captionLog.append("captions:\(url.absoluteString)")
-                return Transcript(source: .youtubeCaptions, sentences: ["Caption result."])
-            },
-            speechToText: { url in
-                await captionLog.append("speech:\(url.absoluteString)")
-                return Transcript(source: .speechToText, sentences: ["Unexpected fallback."])
+            acquireWithProgress: { url, progress in
+                await captionLog.append("acquire:\(url.absoluteString)")
+                await progress(.requestingTokScript)
+                try await Task.sleep(nanoseconds: 5_000_000)
+                return Transcript(source: .tokScript, sentences: ["TokScript result."])
             }
         )
         let captionStore = TranscriptInsightStore(acquisitionClient: captionClient)
         captionStore.send(.urlChanged("https://youtu.be/captions"))
         captionStore.send(.submit)
+        let tokScriptBecameVisible = await waitFor { captionStore.phase == .requestingTokScript }
         let captionsCompleted = await waitFor { captionStore.phase == .complete }
         let captionCalls = await captionLog.values
         expect(captionsCompleted, "Caption acquisition should complete")
-        expect(captionStore.transcript?.source == .youtubeCaptions, "Caption source should be retained")
+        expect(tokScriptBecameVisible, "TokScript should be visible as the primary transcript provider")
+        expect(captionStore.transcript?.source == .tokScript, "TokScript source should be retained")
         expect(
-            captionCalls == ["captions:https://youtu.be/captions"],
-            "Successful captions must not trigger speech-to-text"
+            captionCalls == ["acquire:https://youtu.be/captions"],
+            "A request should use exactly one transcript provider"
         )
 
-        let fallbackLog = CallLog()
-        let fallbackClient = TranscriptAcquisitionClient(
-            captions: { url in
-                await fallbackLog.append("captions:\(url.absoluteString)")
-                throw TranscriptBackendFailure(kind: "captions_unavailable", message: "No captions")
-            },
-            speechToText: { url in
-                await fallbackLog.append("speech:\(url.absoluteString)")
-                try await Task.sleep(nanoseconds: 20_000_000)
+        let gptLog = CallLog()
+        let gptClient = TranscriptAcquisitionClient(
+            acquireWithProgress: { url, progress in
+                await gptLog.append("gpt:\(url.absoluteString)")
+                await progress(.downloadingAudio)
+                try await Task.sleep(nanoseconds: 5_000_000)
+                await progress(.preparingAudio)
+                try await Task.sleep(nanoseconds: 5_000_000)
+                await progress(.transcribingAudio)
+                try await Task.sleep(nanoseconds: 5_000_000)
+                await progress(.formattingTranscript)
+                try await Task.sleep(nanoseconds: 5_000_000)
                 return Transcript(source: .speechToText, sentences: ["Spoken result."])
             }
         )
-        let fallbackStore = TranscriptInsightStore(acquisitionClient: fallbackClient)
-        fallbackStore.send(.urlChanged("https://youtu.be/fallback"))
-        fallbackStore.send(.submit)
-        let fallbackBecameVisible = await waitFor { fallbackStore.phase == .transcribingAudio }
-        let fallbackCompleted = await waitFor { fallbackStore.phase == .complete }
-        let fallbackCalls = await fallbackLog.values
-        expect(fallbackBecameVisible, "Fallback should expose the transcribing phase")
-        expect(fallbackCompleted, "Eligible fallback should complete")
-        expect(fallbackStore.transcript?.source == .speechToText, "Fallback source should be speech-to-text")
+        let gptStore = TranscriptInsightStore(acquisitionClient: gptClient)
+        gptStore.send(.urlChanged("https://youtu.be/gpt"))
+        gptStore.send(.submit)
+        let downloadBecameVisible = await waitFor { gptStore.phase == .downloadingAudio }
+        let preparingBecameVisible = await waitFor { gptStore.phase == .preparingAudio }
+        let transcribingBecameVisible = await waitFor { gptStore.phase == .transcribingAudio }
+        let formattingBecameVisible = await waitFor { gptStore.phase == .formattingTranscript }
+        let gptCompleted = await waitFor { gptStore.phase == .complete }
+        let gptCalls = await gptLog.values
+        expect(downloadBecameVisible, "GPT should expose the download phase")
+        expect(preparingBecameVisible, "GPT should expose the audio preparation phase")
+        expect(transcribingBecameVisible, "GPT should expose the transcription phase")
+        expect(formattingBecameVisible, "GPT should expose the formatting phase")
+        expect(gptCompleted, "GPT acquisition should complete")
+        expect(gptStore.transcript?.source == .speechToText, "GPT source should be speech-to-text")
         expect(
-            fallbackCalls == [
-                "captions:https://youtu.be/fallback",
-                "speech:https://youtu.be/fallback",
-            ],
-            "Fallback should preserve order and exact source URL"
+            gptCalls == ["gpt:https://youtu.be/gpt"],
+            "GPT should be the only provider called"
         )
 
         let failureLog = CallLog()
         let failureClient = TranscriptAcquisitionClient(
-            captions: { url in
-                await failureLog.append("captions:\(url.absoluteString)")
-                throw TranscriptBackendFailure(kind: "video_unavailable", message: "This video is private.")
-            },
-            speechToText: { url in
-                await failureLog.append("speech:\(url.absoluteString)")
-                return Transcript(source: .speechToText, sentences: ["Must not appear."])
+            acquire: { url in
+                await failureLog.append("tokscript:\(url.absoluteString)")
+                throw TranscriptBackendFailure(kind: "tokscript_failed", message: "TokScript quota exhausted.")
             }
         )
         let failureStore = TranscriptInsightStore(acquisitionClient: failureClient)
         failureStore.send(.urlChanged("https://youtu.be/private"))
         failureStore.send(.submit)
         let failureCompleted = await waitFor {
-            failureStore.phase == .transcriptFailed(message: "This video is private.")
+            failureStore.phase == .transcriptFailed(message: "TokScript quota exhausted.")
         }
         let failureCalls = await failureLog.values
         expect(
             failureCompleted,
-            "Non-eligible acquisition errors should remain actionable"
+            "Provider errors should remain actionable"
         )
         expect(
-            failureCalls == ["captions:https://youtu.be/private"],
-            "Private videos must not trigger media processing"
+            failureCalls == ["tokscript:https://youtu.be/private"],
+            "TokScript failure must not trigger GPT"
         )
 
         let retryLog = CallLog()
         let retryClient = TranscriptAcquisitionClient(
-            captions: { url in
-                await retryLog.append("captions:\(url.absoluteString)")
-                throw TranscriptBackendFailure(kind: "captions_unavailable", message: "No captions")
-            },
-            speechToText: { url in
-                await retryLog.append("speech:\(url.absoluteString)")
+            acquire: { url in
+                await retryLog.append("acquire:\(url.absoluteString)")
                 throw TranscriptBackendFailure(kind: "transcription_failed", message: "Try transcription again.")
             }
         )
@@ -172,8 +171,8 @@ struct TranscriptInsightChecks {
         let firstFailure = await waitFor {
             retryStore.phase == .transcriptFailed(message: "Try transcription again.")
         }
-        expect(firstFailure, "Fallback failure should be represented accurately")
-        expect(retryStore.transcript == nil, "Fallback failure must not expose an incorrect transcript")
+        expect(firstFailure, "Provider failure should be represented accurately")
+        expect(retryStore.transcript == nil, "Provider failure must not expose an incorrect transcript")
         retryStore.send(.retry)
         expect(retryStore.phase == .checkingTranscript, "Retry should clear the obsolete error immediately")
         let secondFailure = await waitFor {
@@ -183,16 +182,14 @@ struct TranscriptInsightChecks {
         expect(secondFailure, "Retry failure should remain actionable")
         expect(
             retryCalls == [
-                "captions:https://youtu.be/retry-current",
-                "speech:https://youtu.be/retry-current",
-                "captions:https://youtu.be/retry-current",
-                "speech:https://youtu.be/retry-current",
+                "acquire:https://youtu.be/retry-current",
+                "acquire:https://youtu.be/retry-current",
             ],
             "Retry should reuse the current submitted URL"
         )
 
         if failures.isEmpty {
-            print("Transcript Insight checks passed (\(supportedURLs.count + 9) scenarios).")
+            print("Transcript Insight checks passed (\(supportedURLs.count + 11) scenarios).")
         } else {
             for failure in failures { fputs("FAIL: \(failure)\n", stderr) }
             exit(1)
