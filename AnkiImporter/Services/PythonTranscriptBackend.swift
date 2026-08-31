@@ -3,8 +3,7 @@ import TranscriptInsightCore
 
 enum PythonTranscriptBackend {
     static let live = TranscriptAcquisitionClient(
-        captions: { url in try await request(mode: "captions", url: url) },
-        speechToTextWithProgress: { url, progress in
+        acquireWithProgress: { url, progress in
             try await request(mode: "transcribe", url: url, onProgress: progress)
         }
     )

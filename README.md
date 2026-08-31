@@ -29,13 +29,18 @@ swift run TranscriptInsightChecks
 
 They cover URL validation and the injectable state/action boundary without live platform access.
 
-Transcript acquisition uses `yt-dlp` for platform metadata/media, `ffmpeg` for temporary audio extraction,
-and the OpenAI transcription API when usable English captions are unavailable. Long caption tracks without
-sentence punctuation are restored with `gpt-4o-mini`; the result is accepted only when every original spoken
-word is preserved in order. Install the Python dependencies with `pip install -r agent/requirements.txt`;
-speech-to-text and AI punctuation require `OPENAI_API_KEY`, and speech-to-text also requires `ffmpeg`.
+Transcript acquisition uses exactly one provider, selected by `TRANSCRIPT_PROVIDER` in the root `.env` file.
+Use `tokscript` (the default) to send the video URL directly to TokScript, or `gpt` to download the media with
+`yt-dlp`, extract temporary audio with `ffmpeg`, and send it to the OpenAI transcription API. Providers never
+fall back to each other. Install the Python dependencies with `pip install -r agent/requirements.txt`; GPT mode
+requires `OPENAI_API_KEY` and `ffmpeg`.
 Current YouTube extraction also requires Node.js 22+ or Deno 2.3+ so `yt-dlp` can solve YouTube's JavaScript
 challenges. Installing `agent/requirements.txt` includes yt-dlp's matching EJS solver package.
+
+TokScript MCP is the default transcript provider for YouTube, TikTok, and Instagram. The first request opens
+TokScript OAuth sign-in; access and refresh tokens are stored in macOS Keychain. If TokScript is unavailable or
+its daily allowance is exhausted, the error is shown and GPT is not called. TokScript receives submitted video
+URLs and retains generated transcripts according to the user's TokScript account settings.
 
 Set `TRANSCRIPT_PUNCTUATION_MODE=local` to use only local length heuristics, or `off` to disable restoration.
 Override the default punctuation model with `OPENAI_PUNCTUATION_MODEL`.
@@ -98,7 +103,11 @@ OPENAI_API_KEY=sk-your-key-here
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 OPENAI_API_KEY=sk-your-key-here
+TRANSCRIPT_PROVIDER=tokscript
 ```
+
+Change `TRANSCRIPT_PROVIDER` to `gpt` to use OpenAI audio transcription instead. Restart the app after changing
+the value. A process environment variable with the same name overrides the root `.env`.
 
 ### 3. Install Anki & AnkiConnect
 

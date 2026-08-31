@@ -4,6 +4,7 @@ import Foundation
 public enum TranscriptInsightPhase: Equatable, Sendable {
     case empty
     case invalidURL(message: String)
+    case requestingTokScript
     case checkingTranscript
     case downloadingAudio
     case retryingDownload
@@ -15,6 +16,8 @@ public enum TranscriptInsightPhase: Equatable, Sendable {
 }
 
 public enum TranscriptAcquisitionProgress: String, Equatable, Sendable {
+    case requestingTokScript = "requesting_tokscript"
+    case checkingPlatformCaptions = "checking_platform_captions"
     case downloadingAudio = "downloading_audio"
     case retryingDownload = "retrying_download"
     case preparingAudio = "preparing_audio"
@@ -30,12 +33,14 @@ public enum TranscriptInsightAction: Equatable, Sendable {
 }
 
 public enum TranscriptSource: String, Equatable, Sendable {
+    case tokScript = "tokscript"
     case youtubeCaptions = "youtube_captions"
     case tiktokCaptions = "tiktok_captions"
     case speechToText = "speech_to_text"
 
     public var displayName: String {
         switch self {
+        case .tokScript: return "TokScript"
         case .youtubeCaptions: return "YouTube captions"
         case .tiktokCaptions: return "TikTok captions"
         case .speechToText: return "Speech-to-text"
@@ -63,43 +68,34 @@ public struct TranscriptBackendFailure: Error, Equatable, Sendable {
         self.kind = kind
         self.message = message
     }
-
-    public var permitsSpeechToTextFallback: Bool {
-        kind == "captions_unavailable"
-    }
 }
 
 public struct TranscriptAcquisitionClient: Sendable {
-    public let captions: @Sendable (URL) async throws -> Transcript
-    public let speechToText: @Sendable (
+    public let acquire: @Sendable (
         URL,
         @escaping @Sendable (TranscriptAcquisitionProgress) async -> Void
     ) async throws -> Transcript
 
     public init(
-        captions: @escaping @Sendable (URL) async throws -> Transcript,
-        speechToText: @escaping @Sendable (URL) async throws -> Transcript
+        acquire: @escaping @Sendable (URL) async throws -> Transcript
     ) {
-        self.captions = captions
-        self.speechToText = { url, _ in try await speechToText(url) }
+        self.acquire = { url, _ in try await acquire(url) }
     }
 
     public init(
-        captions: @escaping @Sendable (URL) async throws -> Transcript,
-        speechToTextWithProgress: @escaping @Sendable (
+        acquireWithProgress: @escaping @Sendable (
             URL,
             @escaping @Sendable (TranscriptAcquisitionProgress) async -> Void
         ) async throws -> Transcript
     ) {
-        self.captions = captions
-        self.speechToText = speechToTextWithProgress
+        self.acquire = acquireWithProgress
     }
 }
 
 @MainActor
 public final class TranscriptInsightStore: ObservableObject {
     public static let malformedURLMessage = "Enter a valid video URL."
-    public static let unsupportedHostMessage = "Use a YouTube or TikTok link."
+    public static let unsupportedHostMessage = "Use a YouTube, TikTok, or Instagram link."
 
     @Published public private(set) var enteredURL: String
     @Published public private(set) var submittedURL: URL?
@@ -132,7 +128,7 @@ public final class TranscriptInsightStore: ObservableObject {
 
     public var isURLLocked: Bool {
         switch phase {
-        case .checkingTranscript, .downloadingAudio, .retryingDownload, .preparingAudio,
+        case .requestingTokScript, .checkingTranscript, .downloadingAudio, .retryingDownload, .preparingAudio,
              .transcribingAudio, .formattingTranscript:
             return true
         default:
@@ -147,6 +143,7 @@ public final class TranscriptInsightStore: ObservableObject {
 
     public var processingStatus: String? {
         switch phase {
+        case .requestingTokScript: return "Getting transcript from TokScript..."
         case .checkingTranscript: return "Checking for transcript..."
         case .downloadingAudio: return "Downloading audio..."
         case .retryingDownload: return "TikTok changed its response. Retrying download..."
@@ -190,25 +187,13 @@ public final class TranscriptInsightStore: ObservableObject {
         acquisitionTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await acquisitionClient.captions(url)
+                let result = try await acquisitionClient.acquire(url) { [weak self] progress in
+                    guard !Task.isCancelled else { return }
+                    await self?.show(progress)
+                }
                 guard !Task.isCancelled else { return }
                 transcript = result
                 phase = .complete
-            } catch let failure as TranscriptBackendFailure where failure.permitsSpeechToTextFallback {
-                guard !Task.isCancelled else { return }
-                phase = .downloadingAudio
-                do {
-                    let result = try await acquisitionClient.speechToText(url) { [weak self] progress in
-                        guard !Task.isCancelled else { return }
-                        await self?.show(progress)
-                    }
-                    guard !Task.isCancelled else { return }
-                    transcript = result
-                    phase = .complete
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    phase = .transcriptFailed(message: Self.message(for: error))
-                }
             } catch {
                 guard !Task.isCancelled else { return }
                 phase = .transcriptFailed(message: Self.message(for: error))
@@ -218,6 +203,8 @@ public final class TranscriptInsightStore: ObservableObject {
 
     private func show(_ progress: TranscriptAcquisitionProgress) {
         switch progress {
+        case .requestingTokScript: phase = .requestingTokScript
+        case .checkingPlatformCaptions: phase = .checkingTranscript
         case .downloadingAudio: phase = .downloadingAudio
         case .retryingDownload: phase = .retryingDownload
         case .preparingAudio: phase = .preparingAudio
@@ -261,7 +248,8 @@ public final class TranscriptInsightStore: ObservableObject {
 
         let isYouTube = host == "youtu.be" || host == "youtube.com" || host.hasSuffix(".youtube.com")
         let isTikTok = host == "tiktok.com" || host.hasSuffix(".tiktok.com")
-        guard isYouTube || isTikTok else { return .unsupportedHost }
+        let isInstagram = host == "instagram.com" || host.hasSuffix(".instagram.com") || host == "instagr.am"
+        guard isYouTube || isTikTok || isInstagram else { return .unsupportedHost }
         return .supported(url)
     }
 }
